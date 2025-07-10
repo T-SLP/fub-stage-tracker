@@ -3,6 +3,7 @@ import psycopg2
 import psycopg2.extras
 import datetime
 import json
+import base64
 from urllib.parse import quote_plus
 import os
 
@@ -13,7 +14,9 @@ SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
 # === GET PEOPLE FROM FUB ===
 def fetch_all_people():
     url = "https://api.followupboss.com/v1/people"
-    headers = {"Authorization": f"Basic {quote_plus(FUB_API_KEY)}"}
+    auth_string = base64.b64encode(f"{FUB_API_KEY}:".encode("utf-8")).decode("utf-8")
+    headers = {"Authorization": f"Basic {auth_string}"}
+
     people = []
     page = 1
 
