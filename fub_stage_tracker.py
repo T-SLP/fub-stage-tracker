@@ -3,11 +3,12 @@ import psycopg2
 import psycopg2.extras
 import datetime
 import json
+import os
 from urllib.parse import quote_plus
 
 # === CONFIG ===
-FUB_API_KEY = "fka_0DxOlS07NmHLDLVjKXB7N9qJyOSM4QtM2u"
-SUPABASE_DB_URL = "postgresql://postgres:UnVen%SUBJd&#7@@db.jefrfayzrxfcjeviwfhw.supabase.co:5432/postgres"
+FUB_API_KEY = os.environ.get("FUB_API_KEY")
+SUPABASE_DB_URL = os.environ.get("SUPABASE_DB_URL")
 
 # === GET PEOPLE FROM FUB ===
 def fetch_all_people():
