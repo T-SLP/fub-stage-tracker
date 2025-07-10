@@ -47,7 +47,7 @@ def get_last_stage_for_person(conn, person_id):
             WHERE person_id = %s
             ORDER BY changed_at DESC
             LIMIT 1;
-        """, (person_id,))
+        """, (str(person_id),))
         row = cur.fetchone()
         return row[0] if row else None
 
