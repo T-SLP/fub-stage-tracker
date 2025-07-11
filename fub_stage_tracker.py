@@ -15,7 +15,11 @@ SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
 def fetch_all_people():
     url = "https://api.followupboss.com/v1/people"
     auth_string = base64.b64encode(f"{FUB_API_KEY}:".encode("utf-8")).decode("utf-8")
-    headers = {"Authorization": f"Basic {auth_string}"}
+    headers = {
+        "Authorization": f"Basic {auth_string}",
+        "X-System": "SynergyFUBLeadMetrics",
+        "X-System-Key": os.getenv("FUB_SYSTEM_KEY")
+    }
 
     people = []
     page = 1
