@@ -20,11 +20,14 @@ def fetch_people_count():
         "X-System": "SynergyFUBLeadMetrics",
         "X-System-Key": os.getenv("FUB_SYSTEM_KEY")
     }
-    resp = requests.get(url, headers=headers)
-    if resp.status_code == 200:
-        print("FUB reports total accessible leads:", resp.json().get("count"))
-    else:
-        print("Error fetching lead count:", resp.text)
+    try:
+        resp = requests.get(url, headers=headers)
+        resp.raise_for_status()
+        count = resp.json().get("count")
+        print("FUB reports total accessible leads:", count)
+    except Exception as e:
+        print("Error fetching lead count:", e)
+        print("Raw response:", resp.text)
 
 # === GET PEOPLE FROM FUB ===
 def fetch_all_people():
