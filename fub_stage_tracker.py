@@ -11,24 +11,6 @@ from urllib.parse import quote_plus
 FUB_API_KEY = os.getenv("FUB_API_KEY")
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
 
-# === DEBUG: Check accessible lead count ===
-def fetch_people_count():
-    url = "https://api.followupboss.com/v1/people/count"
-    auth_string = base64.b64encode(f"{FUB_API_KEY}:".encode("utf-8")).decode("utf-8")
-    headers = {
-        "Authorization": f"Basic {auth_string}",
-        "X-System": "SynergyFUBLeadMetrics",
-        "X-System-Key": os.getenv("FUB_SYSTEM_KEY")
-    }
-    try:
-        resp = requests.get(url, headers=headers)
-        resp.raise_for_status()
-        count = resp.json().get("count")
-        print("FUB reports total accessible leads:", count)
-    except Exception as e:
-        print("Error fetching lead count:", e)
-        print("Raw response:", resp.text)
-
 # === GET PEOPLE FROM FUB ===
 def fetch_all_people():
     url = "https://api.followupboss.com/v1/people"
@@ -45,8 +27,7 @@ def fetch_all_people():
     while True:
         params = {
             "page": page,
-            "limit": 100,
-            "assigned": False
+            "limit": 100
         }
 
         resp = requests.get(url, headers=headers, params=params)
@@ -56,8 +37,8 @@ def fetch_all_people():
 
         data = resp.json()
         current_batch = data.get("people", [])
-        people.extend(current_batch)
         print(f"Fetched page {page} with {len(current_batch)} people")
+        people.extend(current_batch)
 
         if data.get("more", False):
             print("More pages available...")
@@ -108,7 +89,6 @@ def log_stage_change(conn, person, old_stage):
 # === MAIN LOGIC ===
 def run_polling():
     print("Starting stage polling...")
-    fetch_people_count()
     people = fetch_all_people()
     print(f"Total people fetched from FUB: {len(people)}")
 
