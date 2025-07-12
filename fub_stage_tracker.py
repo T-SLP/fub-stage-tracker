@@ -3,9 +3,9 @@ import psycopg2
 import psycopg2.extras
 import datetime
 import json
+import os
 import base64
 from urllib.parse import quote_plus
-import os
 
 # === CONFIG ===
 FUB_API_KEY = os.getenv("FUB_API_KEY")
@@ -80,7 +80,11 @@ def log_stage_change(conn, person, old_stage):
 def run_polling():
     print("Starting stage polling...")
     people = fetch_all_people()
+    print(f"Fetched {len(people)} people from FUB")
+
     conn = get_connection()
+    skipped = 0
+    logged = 0
 
     for person in people:
         person_id = person.get("id")
@@ -88,21 +92,23 @@ def run_polling():
         if not person_id or not current_stage:
             continue
 
-        # Skip if still in Contact Upload stage
         if current_stage == "Contact Upload":
+            skipped += 1
             continue
 
-        last_stage = get_last_stage_for_person(conn, person_id)
+        last_stage = get_last_stage_for_person(conn, str(person_id))
 
-        # If first time seeing this lead and they're not in Contact Upload, set from_stage = Contact Upload
         if last_stage is None:
             log_stage_change(conn, person, "Contact Upload")
             print(f"New tracked lead {person.get('firstName')} {person.get('lastName')} moved from Contact Upload -> {current_stage}")
-
+            logged += 1
         elif last_stage != current_stage:
             log_stage_change(conn, person, last_stage)
             print(f"Logging stage change for {person.get('firstName')} {person.get('lastName')}: {last_stage} -> {current_stage}")
+            logged += 1
 
+    print(f"Skipped {skipped} leads still in 'Contact Upload'")
+    print(f"Logged {logged} stage changes")
     conn.close()
     print("Done.")
 
