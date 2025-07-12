@@ -27,7 +27,8 @@ def fetch_all_people():
     while True:
         params = {
             "page": page,
-            "limit": 100
+            "limit": 100,
+            "assigned": False
         }
 
         resp = requests.get(url, headers=headers, params=params)
@@ -40,9 +41,12 @@ def fetch_all_people():
         people.extend(current_batch)
         print(f"Fetched page {page} with {len(current_batch)} people")
 
-        if not data.get("more", False):
+        if data.get("more", False):
+            print("More pages available...")
+            page += 1
+        else:
+            print("No more pages after page", page)
             break
-        page += 1
 
     return people
 
