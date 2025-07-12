@@ -25,13 +25,20 @@ def fetch_all_people():
     page = 1
 
     while True:
-        resp = requests.get(url, headers=headers, params={"page": page})
+        params = {
+            "page": page,
+            "limit": 100
+        }
+
+        resp = requests.get(url, headers=headers, params=params)
         if resp.status_code != 200:
             print("Error fetching people:", resp.text)
             break
 
         data = resp.json()
-        people.extend(data.get("people", []))
+        current_batch = data.get("people", [])
+        people.extend(current_batch)
+        print(f"Fetched page {page} with {len(current_batch)} people")
 
         if not data.get("more", False):
             break
@@ -80,7 +87,7 @@ def log_stage_change(conn, person, old_stage):
 def run_polling():
     print("Starting stage polling...")
     people = fetch_all_people()
-    print(f"Fetched {len(people)} people from FUB")
+    print(f"Total people fetched from FUB: {len(people)}")
 
     conn = get_connection()
     skipped = 0
