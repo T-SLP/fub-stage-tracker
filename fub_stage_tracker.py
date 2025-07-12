@@ -11,6 +11,21 @@ from urllib.parse import quote_plus
 FUB_API_KEY = os.getenv("FUB_API_KEY")
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
 
+# === DEBUG: Check accessible lead count ===
+def fetch_people_count():
+    url = "https://api.followupboss.com/v1/people/count"
+    auth_string = base64.b64encode(f"{FUB_API_KEY}:".encode("utf-8")).decode("utf-8")
+    headers = {
+        "Authorization": f"Basic {auth_string}",
+        "X-System": "SynergyFUBLeadMetrics",
+        "X-System-Key": os.getenv("FUB_SYSTEM_KEY")
+    }
+    resp = requests.get(url, headers=headers)
+    if resp.status_code == 200:
+        print("FUB reports total accessible leads:", resp.json().get("count"))
+    else:
+        print("Error fetching lead count:", resp.text)
+
 # === GET PEOPLE FROM FUB ===
 def fetch_all_people():
     url = "https://api.followupboss.com/v1/people"
@@ -90,6 +105,7 @@ def log_stage_change(conn, person, old_stage):
 # === MAIN LOGIC ===
 def run_polling():
     print("Starting stage polling...")
+    fetch_people_count()
     people = fetch_all_people()
     print(f"Total people fetched from FUB: {len(people)}")
 
