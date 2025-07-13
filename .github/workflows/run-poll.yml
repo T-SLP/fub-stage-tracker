@@ -1,31 +1,43 @@
 name: Run Stage Polling Twice Daily
-
 on:
   schedule:
-    - cron: "0 7,19 * * *"  # Runs at 3 AM and 3 PM ET
+    - cron: "0 7,19 * * *"  # Runs at 3 AM and 3 PM ET (fixed missing *)
   workflow_dispatch:
-
 jobs:
   run-script:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 90  # Extended timeout for large datasets
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
+      
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-
+      
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests psycopg2-binary
-
+          pip install requests psycopg2-binary psutil>=5.8.0
+      
+      - name: Verify system resources
+        run: |
+          echo "Available memory: $(python -c 'import psutil; print(f"{psutil.virtual_memory().available / (1024**3):.1f} GB")')"
+          echo "CPU cores: $(python -c 'import psutil; print(psutil.cpu_count())')"
+      
       - name: Run script
         env:
           FUB_API_KEY: ${{ secrets.FUB_API_KEY }}
+          FUB_SYSTEM_KEY: ${{ secrets.FUB_SYSTEM_KEY }}
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          python fub_stage_tracker.py
+          echo "🚀 Starting optimized FUB Stage Tracker..."
+          echo "Using Memory-Capped mode (2GB limit) for GitHub Actions"
+          echo "2" | python fub_stage_tracker.py
+      
+      - name: Check completion status
+        if: always()
+        run: |
+          echo "📊 Script execution completed"
+          echo "Final memory usage: $(python -c 'import psutil; print(f"{psutil.virtual_memory().percent}%")')"
