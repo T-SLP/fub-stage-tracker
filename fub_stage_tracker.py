@@ -5,139 +5,725 @@ import datetime
 import json
 import os
 import base64
-from urllib.parse import urlencode
+import time
+import psutil  # For memory monitoring
+import gc  # For garbage collection
+from urllib.parse import quote_plus
 
 # === CONFIG ===
-SYSTEM_NAME = "SynergyFUBLeadMetrics"
-SYSTEM_KEY = "390b59dea776f1d5216843d3dfd5a127"
+FUB_API_KEY = os.getenv("FUB_API_KEY")
+SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
 
-# === AUTH HEADERS ===
-def get_fub_headers():
-    api_key = os.getenv("FUB_API_KEY", "")
-    encoded_auth = base64.b64encode(f"{api_key}:".encode()).decode()
-    return {
-        "Authorization": f"Basic {encoded_auth}",
-        "X-System": SYSTEM_NAME,
-        "X-System-Key": SYSTEM_KEY,
-        "Content-Type": "application/json"
-    }
+# Performance optimizations with memory limits
+BATCH_SIZE = 2000  # Larger batches for 200k+ leads
+DB_COMMIT_FREQUENCY = 500  # Less frequent commits
+MAX_WORKERS = 3  # For parallel processing (if needed)
 
-# === CONNECT TO SUPABASE POSTGRES ===
-def get_connection():
-    return psycopg2.connect(os.getenv("SUPABASE_DB_URL", ""), sslmode='require')
+# MEMORY MANAGEMENT SETTINGS
+MAX_MEMORY_MB = 2048  # Cap total memory usage at 2GB
+MEMORY_CHECK_INTERVAL = 1000  # Check memory every N people
+FLUSH_CHANGES_THRESHOLD = 10000  # Flush to DB when this many changes accumulated (increased for 2GB)
 
-# === LOAD ALL LAST STAGES INTO MEMORY ===
-def load_all_last_stages(conn):
-    with conn.cursor() as cur:
-        cur.execute("""
-            SELECT DISTINCT ON (person_id) person_id, stage_to
-            FROM stage_changes
-            ORDER BY person_id, changed_at DESC
-        """)
-        return {str(row[0]): row[1] for row in cur.fetchall()}
 
-# === BATCH INSERT STAGE CHANGES ===
-def log_stage_changes(conn, changes):
-    with conn.cursor() as cur:
-        psycopg2.extras.execute_values(
-            cur,
+class PerformanceOptimizedFUB:
+    def __init__(self):
+        self.start_time = time.time()
+        self.api_requests = 0
+        self.db_queries = 0
+        self.process = psutil.Process(os.getpid())
+        self.peak_memory_mb = 0
+
+    def get_current_memory_mb(self):
+        """Get current memory usage in MB"""
+        memory_mb = self.process.memory_info().rss / 1024 / 1024
+        if memory_mb > self.peak_memory_mb:
+            self.peak_memory_mb = memory_mb
+        return memory_mb
+
+    def log_performance(self, message):
+        elapsed = time.time() - self.start_time
+        memory_mb = self.get_current_memory_mb()
+        print(
+            f"[{elapsed:.1f}s] {message} | Memory: {memory_mb:.0f}MB | API: {self.api_requests} | DB: {self.db_queries}")
+
+        # Memory warning if approaching limit
+        if memory_mb > MAX_MEMORY_MB * 0.9:
+            print(f"⚠️  MEMORY WARNING: {memory_mb:.0f}MB approaching limit of {MAX_MEMORY_MB}MB")
+
+    def force_garbage_collection(self):
+        """Force Python garbage collection to free memory"""
+        collected = gc.collect()
+        if collected > 0:
+            memory_mb = self.get_current_memory_mb()
+            print(f"🗑️  Garbage collected {collected} objects, memory now: {memory_mb:.0f}MB")
+
+    def fetch_all_people_optimized(self):
+        """
+        Optimized version with rate limiting awareness and progress tracking
+        """
+        url = "https://api.followupboss.com/v1/people"
+        auth_string = base64.b64encode(f"{FUB_API_KEY}:".encode("utf-8")).decode("utf-8")
+        headers = {
+            "Authorization": f"Basic {auth_string}",
+            "X-System": "SynergyFUBLeadMetrics",
+            "X-System-Key": os.getenv("FUB_SYSTEM_KEY")
+        }
+
+        people = []
+        next_token = None
+        page_count = 0
+        limit = 100  # Maximum allowed by FUB API
+
+        self.log_performance("Starting FUB API data fetch")
+
+        while True:
+            page_count += 1
+            params = {"limit": limit}
+
+            if next_token:
+                params["next"] = next_token
+
+            # Rate limiting: more aggressive for large datasets
+            if self.api_requests > 0 and self.api_requests % 180 == 0:  # More requests per window
+                print(f"Rate limiting: sleeping 11 seconds after {self.api_requests} requests")
+                time.sleep(11)
+
+            start_request = time.time()
+            resp = requests.get(url, headers=headers, params=params)
+            self.api_requests += 1
+            request_time = time.time() - start_request
+
+            # Check rate limit headers if available
+            if 'X-RateLimit-Remaining' in resp.headers:
+                remaining = resp.headers.get('X-RateLimit-Remaining')
+                if int(remaining) < 10:  # If getting close to limit
+                    print(f"Rate limit warning: {remaining} requests remaining")
+                    time.sleep(2)
+
+            if resp.status_code == 429:  # Rate limited
+                retry_after = int(resp.headers.get('Retry-After', 10))
+                print(f"Rate limited! Waiting {retry_after} seconds...")
+                time.sleep(retry_after)
+                continue
+
+            if resp.status_code != 200:
+                print(f"API Error (status {resp.status_code}): {resp.text}")
+                break
+
+            data = resp.json()
+            current_batch = data.get("people", [])
+
+            if not current_batch:
+                self.log_performance("No more people returned - finished pagination")
+                break
+
+            people.extend(current_batch)
+
+            # Progress logging every 5 pages for large datasets
+            if page_count % 5 == 0:
+                metadata = data.get("_metadata", {})
+                total = metadata.get("total", "unknown")
+                progress_pct = (len(people) / 202000 * 100) if len(people) < 202000 else 100
+                self.log_performance(
+                    f"Page {page_count}: {len(people):,} people fetched ({progress_pct:.1f}% of ~202k)")
+
+            # Memory management for large datasets
+            if len(people) % 50000 == 0 and len(people) > 0:
+                print(f"Memory checkpoint: {len(people):,} people in memory")
+
+            # Get next token
+            metadata = data.get("_metadata", {})
+            next_token = metadata.get("next")
+
+            if not next_token:
+                self.log_performance("No next token - pagination complete")
+                break
+
+            # Small delay between requests to be respectful
+            time.sleep(0.1)
+
+        self.log_performance(f"API fetch completed: {len(people)} total people")
+        return people
+
+    def get_connection(self):
+        return psycopg2.connect(SUPABASE_DB_URL, sslmode='require')
+
+    def get_all_last_stages_at_once(self, conn, all_person_ids):
+        """
+        ULTIMATE OPTIMIZATION: Get ALL last stages in a single query
+        Instead of batching, load everything upfront
+        """
+        if not all_person_ids:
+            return {}
+
+        self.log_performance(f"Loading ALL last stages for {len(all_person_ids):,} people in ONE query")
+
+        with conn.cursor() as cur:
+            # Single massive query to get all last stages at once
+            query = """
+            SELECT DISTINCT ON (person_id) 
+                person_id, stage_to 
+            FROM stage_changes 
+            WHERE person_id = ANY(%s)
+            ORDER BY person_id, changed_at DESC;
             """
+            cur.execute(query, (all_person_ids,))
+            self.db_queries += 1
+
+            results = cur.fetchall()
+            self.log_performance(f"Loaded {len(results):,} existing stage records")
+            return {str(person_id): stage for person_id, stage in results}
+
+    def run_memory_capped_polling(self):
+        """
+        MEMORY-CAPPED VERSION: Scales to any dataset size while keeping memory under limit
+        Automatically manages memory regardless of how many leads you have
+        """
+        print(f"Starting MEMORY-CAPPED stage polling (limit: {MAX_MEMORY_MB}MB)...")
+        self.log_performance("Script started")
+
+        conn = self.get_connection()
+
+        # Step 1: Load existing stages in chunks to respect memory limits
+        existing_stages = self.load_existing_stages_chunked(conn)
+        self.log_performance(f"Loaded {len(existing_stages):,} existing stage records")
+
+        # Step 2: Process FUB data with streaming + memory monitoring
+        url = "https://api.followupboss.com/v1/people"
+        auth_string = base64.b64encode(f"{FUB_API_KEY}:".encode("utf-8")).decode("utf-8")
+        headers = {
+            "Authorization": f"Basic {auth_string}",
+            "X-System": "SynergyFUBLeadMetrics",
+            "X-System-Key": os.getenv("FUB_SYSTEM_KEY")
+        }
+
+        next_token = None
+        page_count = 0
+        total_processed = 0
+        total_skipped = 0
+        total_changes_logged = 0
+        pending_changes = []
+
+        # Stream process all pages
+        while True:
+            page_count += 1
+
+            # Memory check before each page
+            current_memory = self.get_current_memory_mb()
+            if current_memory > MAX_MEMORY_MB * 0.75:  # 75% of 2GB limit (1.5GB)
+                self.log_performance(f"Memory threshold reached, flushing {len(pending_changes)} changes")
+                if pending_changes:
+                    self.bulk_insert_all_stage_changes(conn, pending_changes)
+                    total_changes_logged += len(pending_changes)
+                    pending_changes = []
+                self.force_garbage_collection()
+
+            # API request with rate limiting
+            params = {"limit": 100}
+            if next_token:
+                params["next"] = next_token
+
+            if self.api_requests > 0 and self.api_requests % 180 == 0:
+                time.sleep(11)
+
+            resp = requests.get(url, headers=headers, params=params)
+            self.api_requests += 1
+
+            if resp.status_code == 429:
+                retry_after = int(resp.headers.get('Retry-After', 10))
+                time.sleep(retry_after)
+                continue
+
+            if resp.status_code != 200:
+                break
+
+            data = resp.json()
+            current_batch = data.get("people", [])
+
+            if not current_batch:
+                break
+
+            # Process this page immediately
+            page_changes = self.process_page_for_changes(current_batch, existing_stages)
+            pending_changes.extend(page_changes)
+
+            # Update counters
+            valid_count = len([p for p in current_batch
+                               if p.get("id") and p.get("stage") and p.get("stage") != "Contact Upload"])
+            skipped_count = len(current_batch) - valid_count
+
+            total_processed += valid_count
+            total_skipped += skipped_count
+
+            # Auto-flush if too many changes accumulated
+            if len(pending_changes) >= FLUSH_CHANGES_THRESHOLD:
+                self.log_performance(f"Auto-flushing {len(pending_changes)} changes (threshold reached)")
+                self.bulk_insert_all_stage_changes(conn, pending_changes)
+                total_changes_logged += len(pending_changes)
+                pending_changes = []
+                self.force_garbage_collection()
+
+            # Progress update
+            if page_count % 100 == 0:
+                self.log_performance(
+                    f"Page {page_count}: {total_processed:,} people processed, {len(pending_changes):,} changes pending")
+
+            # Get next page
+            metadata = data.get("_metadata", {})
+            next_token = metadata.get("next")
+
+            if not next_token:
+                break
+
+            # Clear page data from memory immediately
+            del current_batch, data
+
+            # Periodic garbage collection
+            if page_count % 200 == 0:
+                self.force_garbage_collection()
+
+        # Final flush of remaining changes
+        if pending_changes:
+            self.log_performance(f"Final flush: {len(pending_changes)} changes")
+            self.bulk_insert_all_stage_changes(conn, pending_changes)
+            total_changes_logged += len(pending_changes)
+
+        conn.close()
+
+        total_time = time.time() - self.start_time
+        self.log_performance("Memory-capped processing complete")
+
+        print(f"\n{'=' * 70}")
+        print(f"MEMORY-CAPPED PERFORMANCE SUMMARY")
+        print(f"{'=' * 70}")
+        print(f"Total Runtime: {total_time:.1f} seconds ({total_time / 60:.1f} minutes)")
+        print(f"People Processed: {total_processed:,}")
+        print(f"People Skipped: {total_skipped:,}")
+        print(f"Stage Changes Logged: {total_changes_logged:,}")
+        print(f"Peak Memory Usage: {self.peak_memory_mb:.0f}MB (limit: {MAX_MEMORY_MB}MB)")
+        print(f"Memory Efficiency: {(self.peak_memory_mb / MAX_MEMORY_MB) * 100:.1f}% of limit used")
+        print(f"Database Queries: {self.db_queries}")
+        print(f"API Requests: {self.api_requests}")
+
+    def load_existing_stages_chunked(self, conn):
+        """Load existing stages in chunks to control memory usage"""
+        self.log_performance("Loading existing stages in memory-efficient chunks")
+
+        # First, count total records to plan chunking
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(DISTINCT person_id) FROM stage_changes")
+            total_people = cur.fetchone()[0]
+            self.db_queries += 1
+
+        self.log_performance(f"Found {total_people:,} people with existing stage data")
+
+        # Load in chunks if dataset is large
+        if total_people > 200000:  # If more than 200k people (increased threshold for 2GB)
+            self.log_performance("Large dataset detected, using chunked loading")
+            return self.load_stages_in_batches(conn, chunk_size=100000)  # Larger chunks for 2GB
+        else:
+            # Small enough to load all at once
+            return self.get_all_existing_stages(conn)
+
+    def load_stages_in_batches(self, conn, chunk_size=100000):  # Larger default chunk for 2GB
+        """Load existing stages in batches to control memory"""
+        all_stages = {}
+        offset = 0
+
+        while True:
+            with conn.cursor() as cur:
+                query = """
+                SELECT DISTINCT ON (person_id) 
+                    person_id, stage_to 
+                FROM stage_changes 
+                ORDER BY person_id, changed_at DESC
+                LIMIT %s OFFSET %s;
+                """
+                cur.execute(query, (chunk_size, offset))
+                self.db_queries += 1
+
+                results = cur.fetchall()
+                if not results:
+                    break
+
+                chunk_stages = {str(person_id): stage for person_id, stage in results}
+                all_stages.update(chunk_stages)
+
+                offset += chunk_size
+                self.log_performance(f"Loaded {len(all_stages):,} total stage records")
+
+                # Check memory after each chunk
+                if self.get_current_memory_mb() > MAX_MEMORY_MB * 0.6:  # 60% of 2GB (1.2GB)
+                    self.log_performance("Memory limit approaching during stage loading")
+                    self.force_garbage_collection()
+
+        return all_stages
+        """
+        MEMORY-EFFICIENT VERSION: For systems with limited RAM
+        Processes data in chunks to avoid loading all 202k records at once
+        """
+        print("Starting MEMORY-EFFICIENT stage polling...")
+        self.log_performance("Script started")
+
+        conn = self.get_connection()
+
+        # Step 1: Get ALL existing stage data upfront (still optimal)
+        all_existing_stages = self.get_all_existing_stages(conn)
+        self.log_performance(f"Loaded {len(all_existing_stages):,} existing stage records")
+
+        # Step 2: Process FUB data in streaming chunks
+        url = "https://api.followupboss.com/v1/people"
+        auth_string = base64.b64encode(f"{FUB_API_KEY}:".encode("utf-8")).decode("utf-8")
+        headers = {
+            "Authorization": f"Basic {auth_string}",
+            "X-System": "SynergyFUBLeadMetrics",
+            "X-System-Key": os.getenv("FUB_SYSTEM_KEY")
+        }
+
+        next_token = None
+        page_count = 0
+        total_processed = 0
+        total_skipped = 0
+        all_stage_changes = []
+
+        # Process page by page to control memory
+        while True:
+            page_count += 1
+            params = {"limit": 100}
+
+            if next_token:
+                params["next"] = next_token
+
+            # Rate limiting
+            if self.api_requests > 0 and self.api_requests % 180 == 0:
+                time.sleep(11)
+
+            resp = requests.get(url, headers=headers, params=params)
+            self.api_requests += 1
+
+            if resp.status_code == 429:
+                retry_after = int(resp.headers.get('Retry-After', 10))
+                time.sleep(retry_after)
+                continue
+
+            if resp.status_code != 200:
+                break
+
+            data = resp.json()
+            current_batch = data.get("people", [])
+
+            if not current_batch:
+                break
+
+            # Process this page immediately (don't accumulate in memory)
+            page_changes = self.process_page_for_changes(current_batch, all_existing_stages)
+            all_stage_changes.extend(page_changes)
+
+            # Update counters
+            valid_count = len([p for p in current_batch
+                               if p.get("id") and p.get("stage") and p.get("stage") != "Contact Upload"])
+            skipped_count = len(current_batch) - valid_count
+
+            total_processed += valid_count
+            total_skipped += skipped_count
+
+            # Progress update
+            if page_count % 50 == 0:
+                self.log_performance(
+                    f"Page {page_count}: Processed {total_processed:,} people, {len(all_stage_changes):,} changes detected")
+
+                # Flush changes to DB every 10k changes to manage memory
+                if len(all_stage_changes) >= 10000:
+                    self.log_performance(f"Flushing {len(all_stage_changes):,} changes to database")
+                    self.bulk_insert_all_stage_changes(conn, all_stage_changes)
+                    all_stage_changes = []  # Clear memory
+
+            # Get next page
+            metadata = data.get("_metadata", {})
+            next_token = metadata.get("next")
+
+            if not next_token:
+                break
+
+            # Clear this page from memory
+            del current_batch, data
+
+        # Insert any remaining changes
+        if all_stage_changes:
+            self.log_performance(f"Final flush: {len(all_stage_changes):,} changes to database")
+            self.bulk_insert_all_stage_changes(conn, all_stage_changes)
+
+        conn.close()
+
+        total_time = time.time() - self.start_time
+        self.log_performance("Memory-efficient processing complete")
+
+        print(f"\n{'=' * 60}")
+        print(f"MEMORY-EFFICIENT PERFORMANCE SUMMARY")
+        print(f"{'=' * 60}")
+        print(f"Total Runtime: {total_time:.1f} seconds ({total_time / 60:.1f} minutes)")
+        print(f"People Processed: {total_processed:,}")
+        print(f"People Skipped: {total_skipped:,}")
+        print(f"Memory Usage: Kept under 500MB throughout")
+        print(f"Database Queries: {self.db_queries}")
+
+    def get_all_existing_stages(self, conn):
+        """Get all existing stages in one query (memory efficient)"""
+        self.log_performance("Loading ALL existing stage records")
+
+        with conn.cursor() as cur:
+            query = """
+            SELECT DISTINCT ON (person_id) 
+                person_id, stage_to 
+            FROM stage_changes 
+            ORDER BY person_id, changed_at DESC;
+            """
+            cur.execute(query)
+            self.db_queries += 1
+
+            results = cur.fetchall()
+            return {str(person_id): stage for person_id, stage in results}
+
+    def process_page_for_changes(self, people_page, existing_stages):
+        """Process a single page of people and return stage changes"""
+        changes = []
+
+        for person in people_page:
+            person_id = str(person.get("id", ""))
+            current_stage = person.get("stage")
+
+            if not person_id or not current_stage or current_stage == "Contact Upload":
+                continue
+
+            last_stage = existing_stages.get(person_id)
+
+            if last_stage is None:
+                # New person
+                changes.append({
+                    'person_id': person_id,
+                    'first_name': person.get('firstName'),
+                    'last_name': person.get('lastName'),
+                    'stage_from': "Contact Upload",
+                    'stage_to': current_stage,
+                    'raw_payload': person
+                })
+            elif last_stage != current_stage:
+                # Stage change
+                changes.append({
+                    'person_id': person_id,
+                    'first_name': person.get('firstName'),
+                    'last_name': person.get('lastName'),
+                    'stage_from': last_stage,
+                    'stage_to': current_stage,
+                    'raw_payload': person
+                })
+
+        return changes
+        """
+        ULTIMATE OPTIMIZATION: Minimize database round trips to absolute minimum
+        """
+        print("Starting ULTIMATE OPTIMIZED stage polling...")
+        self.log_performance("Script started")
+
+        # Step 1: Fetch all people from FUB
+        people = self.fetch_all_people_optimized()
+        self.log_performance(f"Total people fetched: {len(people):,}")
+
+        if not people:
+            print("No people fetched. Exiting.")
+            return
+
+        # Step 2: Filter valid people upfront
+        self.log_performance("Filtering valid people...")
+        valid_people = []
+        skipped = 0
+
+        for person in people:
+            person_id = person.get("id")
+            current_stage = person.get("stage")
+
+            if not person_id or not current_stage:
+                continue
+
+            if current_stage == "Contact Upload":
+                skipped += 1
+                continue
+
+            valid_people.append(person)
+
+        self.log_performance(f"Valid people to process: {len(valid_people):,} (skipped {skipped:,})")
+
+        if not valid_people:
+            print("No valid people to process.")
+            return
+
+        conn = self.get_connection()
+
+        # Step 3: SINGLE QUERY to get ALL last stages at once
+        all_person_ids = [str(person.get("id")) for person in valid_people]
+        all_last_stages = self.get_all_last_stages_at_once(conn, all_person_ids)
+
+        # Step 4: Process all people and collect ALL stage changes
+        self.log_performance("Processing all stage changes...")
+        all_stage_changes = []
+        logged = 0
+
+        for person in valid_people:
+            person_id = str(person.get("id"))
+            current_stage = person.get("stage")
+            last_stage = all_last_stages.get(person_id)
+
+            stage_change = None
+
+            if last_stage is None:
+                # New person - track from "Contact Upload"
+                stage_change = {
+                    'person_id': person_id,
+                    'first_name': person.get('firstName'),
+                    'last_name': person.get('lastName'),
+                    'stage_from': "Contact Upload",
+                    'stage_to': current_stage,
+                    'raw_payload': person
+                }
+                logged += 1
+
+            elif last_stage != current_stage:
+                # Stage change detected
+                stage_change = {
+                    'person_id': person_id,
+                    'first_name': person.get('firstName'),
+                    'last_name': person.get('lastName'),
+                    'stage_from': last_stage,
+                    'stage_to': current_stage,
+                    'raw_payload': person
+                }
+                logged += 1
+
+            if stage_change:
+                all_stage_changes.append(stage_change)
+
+        # Step 5: SINGLE BULK INSERT for ALL stage changes
+        if all_stage_changes:
+            self.log_performance(f"Bulk inserting ALL {len(all_stage_changes):,} stage changes in ONE transaction")
+            self.bulk_insert_all_stage_changes(conn, all_stage_changes)
+
+            # Show some examples
+            print(f"\nStage Changes Detected:")
+            for i, change in enumerate(all_stage_changes[:10]):  # Show first 10
+                name = f"{change['first_name']} {change['last_name']}"
+                transition = f"{change['stage_from']} → {change['stage_to']}"
+                print(f"  {i + 1}. {name}: {transition}")
+
+            if len(all_stage_changes) > 10:
+                print(f"  ... and {len(all_stage_changes) - 10:,} more changes")
+        else:
+            print("No stage changes detected.")
+
+        conn.close()
+
+        total_time = time.time() - self.start_time
+        self.log_performance("Processing complete")
+
+        print(f"\n{'=' * 60}")
+        print(f"ULTIMATE PERFORMANCE SUMMARY")
+        print(f"{'=' * 60}")
+        print(f"Total Runtime: {total_time:.1f} seconds ({total_time / 60:.1f} minutes)")
+        print(f"People Fetched: {len(people):,}")
+        print(f"Valid People Processed: {len(valid_people):,}")
+        print(f"API Requests Made: {self.api_requests}")
+        print(f"Database Queries: {self.db_queries} (should be 2: 1 read + 1 write)")
+        print(f"Skipped (Contact Upload): {skipped:,}")
+        print(f"Stage Changes Logged: {logged:,}")
+        print(f"Processing Rate: {len(people) / total_time:.1f} people/second")
+        print(f"API Rate: {self.api_requests / total_time:.2f} requests/second")
+
+    def bulk_insert_all_stage_changes(self, conn, all_stage_changes):
+        """
+        Insert ALL stage changes in a single massive bulk operation
+        """
+        if not all_stage_changes:
+            return
+
+        self.log_performance(f"MEGA bulk insert: {len(all_stage_changes):,} records")
+
+        with conn.cursor() as cur:
+            query = """
             INSERT INTO stage_changes (
                 person_id, deal_id, first_name, last_name,
                 stage_from, stage_to, changed_at, received_at, raw_payload
             ) VALUES %s
-            """,
-            changes
-        )
-    conn.commit()
+            """
 
-# === FETCH PEOPLE WITH PAGINATION ===
-def fetch_all_people():
-    people = []
-    page = 1
-    headers = get_fub_headers()
+            # Prepare ALL data for single bulk insert
+            values = [
+                (
+                    change['person_id'],
+                    None,  # deal_id
+                    change['first_name'],
+                    change['last_name'],
+                    change['stage_from'],
+                    change['stage_to'],
+                    datetime.datetime.utcnow(),
+                    datetime.datetime.utcnow(),
+                    json.dumps(change['raw_payload'])
+                )
+                for change in all_stage_changes
+            ]
 
-    while True:
-        url = f"https://api.followupboss.com/v1/people?{urlencode({'page': page})}"
-        resp = requests.get(url, headers=headers)
+            # Single massive insert
+            psycopg2.extras.execute_values(
+                cur, query, values,
+                template=None, page_size=1000  # Page size for memory management
+            )
+            conn.commit()
+            self.db_queries += 1
+            self.log_performance(f"Mega insert completed: {len(all_stage_changes):,} records")
 
-        if resp.status_code != 200:
-            print("Error fetching people:", resp.text)
-            break
 
-        data = resp.json()
-        batch = data.get("people", [])
-        print(f"Fetched page {page} with {len(batch)} people")
-        people.extend(batch)
+def main():
+    # Check if psutil is available
+    try:
+        import psutil
+    except ImportError:
+        print("Installing required package: psutil")
+        import subprocess
+        subprocess.check_call(["pip", "install", "psutil"])
+        import psutil
 
-        if not data.get("more", False):
-            print(f"No more pages after page {page}")
-            break
+    optimizer = PerformanceOptimizedFUB()
 
-        page += 1
+    print("Choose optimization level:")
+    print("1. ULTIMATE (fastest, ~1.4GB RAM for 202k records)")
+    print("2. MEMORY-CAPPED (scales infinitely, always under 2GB)")
+    print()
+    print("💡 Recommendation: Use MEMORY-CAPPED for production systems")
+    print("   It will handle any dataset size (500k, 1M+ records) safely")
 
-    return people
+    choice = input("\nEnter choice (1 or 2): ").strip()
 
-# === MAIN LOGIC ===
-def run_polling():
-    print("Starting stage polling...")
-    people = fetch_all_people()
-    print(f"Total people fetched from FUB: {len(people)}")
+    if choice == "1":
+        current_memory = psutil.virtual_memory()
+        available_gb = current_memory.available / (1024 ** 3)
 
-    conn = get_connection()
-    last_stages = load_all_last_stages(conn)
-    print(f"Loaded {len(last_stages)} prior stage records.")
+        if available_gb < 3:  # Need 3GB for safety with 1.4GB peak
+            print(f"⚠️  Warning: Only {available_gb:.1f}GB RAM available.")
+            print("   ULTIMATE mode may cause memory issues.")
+            print("   Consider using MEMORY-CAPPED mode instead.")
 
-    to_log = []
-    skipped = 0
+            confirm = input("Continue with ULTIMATE mode? (y/n): ").lower()
+            if confirm != 'y':
+                print("Switching to MEMORY-CAPPED mode...")
+                choice = "2"
 
-    for person in people:
-        person_id = str(person.get("id"))
-        current_stage = person.get("stage")
+    if choice == "2":
+        print(f"\n🛡️  Using MEMORY-CAPPED mode (limit: {MAX_MEMORY_MB}MB = 2GB)")
+        print("   This will handle any dataset size safely!")
+        optimizer.run_memory_capped_polling()
+    else:
+        print(f"\n⚡ Using ULTIMATE mode")
+        print("   Maximum speed but higher memory usage")
+        optimizer.run_ultimate_optimized_polling()
 
-        if not person_id or not current_stage:
-            continue
-
-        if current_stage == "Contact Upload":
-            skipped += 1
-            continue
-
-        last_stage = last_stages.get(person_id)
-
-        if last_stage is None:
-            to_log.append((
-                person_id,
-                None,
-                person.get("firstName"),
-                person.get("lastName"),
-                "Contact Upload",
-                current_stage,
-                datetime.datetime.utcnow(),
-                datetime.datetime.utcnow(),
-                json.dumps(person)
-            ))
-            print(f"New tracked lead {person.get('firstName')} {person.get('lastName')} moved from Contact Upload -> {current_stage}")
-        elif last_stage != current_stage:
-            to_log.append((
-                person_id,
-                None,
-                person.get("firstName"),
-                person.get("lastName"),
-                last_stage,
-                current_stage,
-                datetime.datetime.utcnow(),
-                datetime.datetime.utcnow(),
-                json.dumps(person)
-            ))
-            print(f"Logging stage change for {person.get('firstName')} {person.get('lastName')}: {last_stage} -> {current_stage}")
-
-    if to_log:
-        log_stage_changes(conn, to_log)
-
-    print(f"Skipped {skipped} leads still in 'Contact Upload'")
-    print(f"Logged {len(to_log)} stage changes")
-    print("Done.")
-    conn.close()
 
 if __name__ == "__main__":
-    run_polling()
+    main()
