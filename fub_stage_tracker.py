@@ -9,6 +9,7 @@ import time
 import psutil  # For memory monitoring
 import gc  # For garbage collection
 from urllib.parse import quote_plus
+from psycopg2 import OperationalError
 
 # === CONFIG ===
 FUB_API_KEY = os.getenv("FUB_API_KEY")
@@ -145,8 +146,45 @@ class PerformanceOptimizedFUB:
         self.log_performance(f"API fetch completed: {len(people)} total people")
         return people
 
-    def get_connection(self):
-        return psycopg2.connect(SUPABASE_DB_URL, sslmode='require')
+    def get_connection(self, max_retries=3):
+        """
+        Get database connection with retry logic
+        """
+        for attempt in range(max_retries + 1):
+            try:
+                conn = psycopg2.connect(SUPABASE_DB_URL, sslmode='require')
+                # Test the connection
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+                return conn
+            except Exception as e:
+                if attempt < max_retries:
+                    wait_time = (attempt + 1) * 2
+                    self.log_performance(
+                        f"Database connection failed, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    self.log_performance(f"Failed to connect to database after {max_retries} retries")
+                    raise
+
+    def save_changes_to_backup_file(self, stage_changes):
+        """
+        Save stage changes to a backup file if database insert fails
+        """
+        backup_filename = f"stage_changes_backup_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+
+        backup_data = {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "total_changes": len(stage_changes),
+            "changes": stage_changes
+        }
+
+        with open(backup_filename, 'w') as f:
+            json.dump(backup_data, f, indent=2, default=str)
+
+        self.log_performance(f"Stage changes saved to backup file: {backup_filename}")
+        print(f"⚠️  Database insert failed, but {len(stage_changes)} changes saved to {backup_filename}")
+        print("   You can manually review and re-import these changes later.")
 
     def get_all_last_stages_at_once(self, conn, all_person_ids):
         """
@@ -173,6 +211,125 @@ class PerformanceOptimizedFUB:
             results = cur.fetchall()
             self.log_performance(f"Loaded {len(results):,} existing stage records")
             return {str(person_id): stage for person_id, stage in results}
+
+    def run_ultimate_optimized_polling(self):
+        """
+        ULTIMATE OPTIMIZATION: Minimize database round trips to absolute minimum
+        """
+        print("Starting ULTIMATE OPTIMIZED stage polling...")
+        self.log_performance("Script started")
+
+        # Step 1: Fetch all people from FUB
+        people = self.fetch_all_people_optimized()
+        self.log_performance(f"Total people fetched: {len(people):,}")
+
+        if not people:
+            print("No people fetched. Exiting.")
+            return
+
+        # Step 2: Filter valid people upfront
+        self.log_performance("Filtering valid people...")
+        valid_people = []
+        skipped = 0
+
+        for person in people:
+            person_id = person.get("id")
+            current_stage = person.get("stage")
+
+            if not person_id or not current_stage:
+                continue
+
+            if current_stage == "Contact Upload":
+                skipped += 1
+                continue
+
+            valid_people.append(person)
+
+        self.log_performance(f"Valid people to process: {len(valid_people):,} (skipped {skipped:,})")
+
+        if not valid_people:
+            print("No valid people to process.")
+            return
+
+        conn = self.get_connection()
+
+        # Step 3: SINGLE QUERY to get ALL last stages at once
+        all_person_ids = [str(person.get("id")) for person in valid_people]
+        all_last_stages = self.get_all_last_stages_at_once(conn, all_person_ids)
+
+        # Step 4: Process all people and collect ALL stage changes
+        self.log_performance("Processing all stage changes...")
+        all_stage_changes = []
+        logged = 0
+
+        for person in valid_people:
+            person_id = str(person.get("id"))
+            current_stage = person.get("stage")
+            last_stage = all_last_stages.get(person_id)
+
+            stage_change = None
+
+            if last_stage is None:
+                # New person - track from "Contact Upload"
+                stage_change = {
+                    'person_id': person_id,
+                    'first_name': person.get('firstName'),
+                    'last_name': person.get('lastName'),
+                    'stage_from': "Contact Upload",
+                    'stage_to': current_stage,
+                    'raw_payload': person
+                }
+                logged += 1
+
+            elif last_stage != current_stage:
+                # Stage change detected
+                stage_change = {
+                    'person_id': person_id,
+                    'first_name': person.get('firstName'),
+                    'last_name': person.get('lastName'),
+                    'stage_from': last_stage,
+                    'stage_to': current_stage,
+                    'raw_payload': person
+                }
+                logged += 1
+
+            if stage_change:
+                all_stage_changes.append(stage_change)
+
+        # Step 5: SINGLE BULK INSERT for ALL stage changes with retry logic
+        if all_stage_changes:
+            self.log_performance(f"Bulk inserting ALL {len(all_stage_changes):,} stage changes in ONE transaction")
+            self.bulk_insert_all_stage_changes(conn, all_stage_changes)
+
+            # Show some examples
+            print(f"\nStage Changes Detected:")
+            for i, change in enumerate(all_stage_changes[:10]):  # Show first 10
+                name = f"{change['first_name']} {change['last_name']}"
+                transition = f"{change['stage_from']} → {change['stage_to']}"
+                print(f"  {i + 1}. {name}: {transition}")
+
+            if len(all_stage_changes) > 10:
+                print(f"  ... and {len(all_stage_changes) - 10:,} more changes")
+        else:
+            print("No stage changes detected.")
+
+        conn.close()
+
+        total_time = time.time() - self.start_time
+        self.log_performance("Processing complete")
+
+        print(f"\n{'=' * 60}")
+        print(f"ULTIMATE PERFORMANCE SUMMARY")
+        print(f"{'=' * 60}")
+        print(f"Total Runtime: {total_time:.1f} seconds ({total_time / 60:.1f} minutes)")
+        print(f"People Fetched: {len(people):,}")
+        print(f"Valid People Processed: {len(valid_people):,}")
+        print(f"API Requests Made: {self.api_requests}")
+        print(f"Database Queries: {self.db_queries} (should be 2: 1 read + 1 write)")
+        print(f"Skipped (Contact Upload): {skipped:,}")
+        print(f"Stage Changes Logged: {logged:,}")
+        print(f"Processing Rate: {len(people) / total_time:.1f} people/second")
+        print(f"API Rate: {self.api_requests / total_time:.2f} requests/second")
 
     def run_memory_capped_polling(self):
         """
@@ -358,114 +515,6 @@ class PerformanceOptimizedFUB:
                     self.force_garbage_collection()
 
         return all_stages
-        """
-        MEMORY-EFFICIENT VERSION: For systems with limited RAM
-        Processes data in chunks to avoid loading all 202k records at once
-        """
-        print("Starting MEMORY-EFFICIENT stage polling...")
-        self.log_performance("Script started")
-
-        conn = self.get_connection()
-
-        # Step 1: Get ALL existing stage data upfront (still optimal)
-        all_existing_stages = self.get_all_existing_stages(conn)
-        self.log_performance(f"Loaded {len(all_existing_stages):,} existing stage records")
-
-        # Step 2: Process FUB data in streaming chunks
-        url = "https://api.followupboss.com/v1/people"
-        auth_string = base64.b64encode(f"{FUB_API_KEY}:".encode("utf-8")).decode("utf-8")
-        headers = {
-            "Authorization": f"Basic {auth_string}",
-            "X-System": "SynergyFUBLeadMetrics",
-            "X-System-Key": os.getenv("FUB_SYSTEM_KEY")
-        }
-
-        next_token = None
-        page_count = 0
-        total_processed = 0
-        total_skipped = 0
-        all_stage_changes = []
-
-        # Process page by page to control memory
-        while True:
-            page_count += 1
-            params = {"limit": 100}
-
-            if next_token:
-                params["next"] = next_token
-
-            # Rate limiting
-            if self.api_requests > 0 and self.api_requests % 180 == 0:
-                time.sleep(11)
-
-            resp = requests.get(url, headers=headers, params=params)
-            self.api_requests += 1
-
-            if resp.status_code == 429:
-                retry_after = int(resp.headers.get('Retry-After', 10))
-                time.sleep(retry_after)
-                continue
-
-            if resp.status_code != 200:
-                break
-
-            data = resp.json()
-            current_batch = data.get("people", [])
-
-            if not current_batch:
-                break
-
-            # Process this page immediately (don't accumulate in memory)
-            page_changes = self.process_page_for_changes(current_batch, all_existing_stages)
-            all_stage_changes.extend(page_changes)
-
-            # Update counters
-            valid_count = len([p for p in current_batch
-                               if p.get("id") and p.get("stage") and p.get("stage") != "Contact Upload"])
-            skipped_count = len(current_batch) - valid_count
-
-            total_processed += valid_count
-            total_skipped += skipped_count
-
-            # Progress update
-            if page_count % 50 == 0:
-                self.log_performance(
-                    f"Page {page_count}: Processed {total_processed:,} people, {len(all_stage_changes):,} changes detected")
-
-                # Flush changes to DB every 10k changes to manage memory
-                if len(all_stage_changes) >= 10000:
-                    self.log_performance(f"Flushing {len(all_stage_changes):,} changes to database")
-                    self.bulk_insert_all_stage_changes(conn, all_stage_changes)
-                    all_stage_changes = []  # Clear memory
-
-            # Get next page
-            metadata = data.get("_metadata", {})
-            next_token = metadata.get("next")
-
-            if not next_token:
-                break
-
-            # Clear this page from memory
-            del current_batch, data
-
-        # Insert any remaining changes
-        if all_stage_changes:
-            self.log_performance(f"Final flush: {len(all_stage_changes):,} changes to database")
-            self.bulk_insert_all_stage_changes(conn, all_stage_changes)
-
-        conn.close()
-
-        total_time = time.time() - self.start_time
-        self.log_performance("Memory-efficient processing complete")
-
-        print(f"\n{'=' * 60}")
-        print(f"MEMORY-EFFICIENT PERFORMANCE SUMMARY")
-        print(f"{'=' * 60}")
-        print(f"Total Runtime: {total_time:.1f} seconds ({total_time / 60:.1f} minutes)")
-        print(f"People Processed: {total_processed:,}")
-        print(f"People Skipped: {total_skipped:,}")
-        print(f"Memory Usage: Kept under 500MB throughout")
-        print(f"Database Queries: {self.db_queries}")
 
     def get_all_existing_stages(self, conn):
         """Get all existing stages in one query (memory efficient)"""
@@ -519,165 +568,79 @@ class PerformanceOptimizedFUB:
                 })
 
         return changes
+
+    def bulk_insert_all_stage_changes(self, conn, all_stage_changes, max_retries=3):
         """
-        ULTIMATE OPTIMIZATION: Minimize database round trips to absolute minimum
-        """
-        print("Starting ULTIMATE OPTIMIZED stage polling...")
-        self.log_performance("Script started")
-
-        # Step 1: Fetch all people from FUB
-        people = self.fetch_all_people_optimized()
-        self.log_performance(f"Total people fetched: {len(people):,}")
-
-        if not people:
-            print("No people fetched. Exiting.")
-            return
-
-        # Step 2: Filter valid people upfront
-        self.log_performance("Filtering valid people...")
-        valid_people = []
-        skipped = 0
-
-        for person in people:
-            person_id = person.get("id")
-            current_stage = person.get("stage")
-
-            if not person_id or not current_stage:
-                continue
-
-            if current_stage == "Contact Upload":
-                skipped += 1
-                continue
-
-            valid_people.append(person)
-
-        self.log_performance(f"Valid people to process: {len(valid_people):,} (skipped {skipped:,})")
-
-        if not valid_people:
-            print("No valid people to process.")
-            return
-
-        conn = self.get_connection()
-
-        # Step 3: SINGLE QUERY to get ALL last stages at once
-        all_person_ids = [str(person.get("id")) for person in valid_people]
-        all_last_stages = self.get_all_last_stages_at_once(conn, all_person_ids)
-
-        # Step 4: Process all people and collect ALL stage changes
-        self.log_performance("Processing all stage changes...")
-        all_stage_changes = []
-        logged = 0
-
-        for person in valid_people:
-            person_id = str(person.get("id"))
-            current_stage = person.get("stage")
-            last_stage = all_last_stages.get(person_id)
-
-            stage_change = None
-
-            if last_stage is None:
-                # New person - track from "Contact Upload"
-                stage_change = {
-                    'person_id': person_id,
-                    'first_name': person.get('firstName'),
-                    'last_name': person.get('lastName'),
-                    'stage_from': "Contact Upload",
-                    'stage_to': current_stage,
-                    'raw_payload': person
-                }
-                logged += 1
-
-            elif last_stage != current_stage:
-                # Stage change detected
-                stage_change = {
-                    'person_id': person_id,
-                    'first_name': person.get('firstName'),
-                    'last_name': person.get('lastName'),
-                    'stage_from': last_stage,
-                    'stage_to': current_stage,
-                    'raw_payload': person
-                }
-                logged += 1
-
-            if stage_change:
-                all_stage_changes.append(stage_change)
-
-        # Step 5: SINGLE BULK INSERT for ALL stage changes
-        if all_stage_changes:
-            self.log_performance(f"Bulk inserting ALL {len(all_stage_changes):,} stage changes in ONE transaction")
-            self.bulk_insert_all_stage_changes(conn, all_stage_changes)
-
-            # Show some examples
-            print(f"\nStage Changes Detected:")
-            for i, change in enumerate(all_stage_changes[:10]):  # Show first 10
-                name = f"{change['first_name']} {change['last_name']}"
-                transition = f"{change['stage_from']} → {change['stage_to']}"
-                print(f"  {i + 1}. {name}: {transition}")
-
-            if len(all_stage_changes) > 10:
-                print(f"  ... and {len(all_stage_changes) - 10:,} more changes")
-        else:
-            print("No stage changes detected.")
-
-        conn.close()
-
-        total_time = time.time() - self.start_time
-        self.log_performance("Processing complete")
-
-        print(f"\n{'=' * 60}")
-        print(f"ULTIMATE PERFORMANCE SUMMARY")
-        print(f"{'=' * 60}")
-        print(f"Total Runtime: {total_time:.1f} seconds ({total_time / 60:.1f} minutes)")
-        print(f"People Fetched: {len(people):,}")
-        print(f"Valid People Processed: {len(valid_people):,}")
-        print(f"API Requests Made: {self.api_requests}")
-        print(f"Database Queries: {self.db_queries} (should be 2: 1 read + 1 write)")
-        print(f"Skipped (Contact Upload): {skipped:,}")
-        print(f"Stage Changes Logged: {logged:,}")
-        print(f"Processing Rate: {len(people) / total_time:.1f} people/second")
-        print(f"API Rate: {self.api_requests / total_time:.2f} requests/second")
-
-    def bulk_insert_all_stage_changes(self, conn, all_stage_changes):
-        """
-        Insert ALL stage changes in a single massive bulk operation
+        Insert ALL stage changes with connection retry logic
         """
         if not all_stage_changes:
             return
 
         self.log_performance(f"MEGA bulk insert: {len(all_stage_changes):,} records")
 
-        with conn.cursor() as cur:
-            query = """
-            INSERT INTO stage_changes (
-                person_id, deal_id, first_name, last_name,
-                stage_from, stage_to, changed_at, received_at, raw_payload
-            ) VALUES %s
-            """
+        for attempt in range(max_retries + 1):
+            try:
+                with conn.cursor() as cur:
+                    query = """
+                    INSERT INTO stage_changes (
+                        person_id, deal_id, first_name, last_name,
+                        stage_from, stage_to, changed_at, received_at, raw_payload
+                    ) VALUES %s
+                    """
 
-            # Prepare ALL data for single bulk insert
-            values = [
-                (
-                    change['person_id'],
-                    None,  # deal_id
-                    change['first_name'],
-                    change['last_name'],
-                    change['stage_from'],
-                    change['stage_to'],
-                    datetime.datetime.utcnow(),
-                    datetime.datetime.utcnow(),
-                    json.dumps(change['raw_payload'])
-                )
-                for change in all_stage_changes
-            ]
+                    # Prepare ALL data for single bulk insert
+                    values = [
+                        (
+                            change['person_id'],
+                            None,  # deal_id
+                            change['first_name'],
+                            change['last_name'],
+                            change['stage_from'],
+                            change['stage_to'],
+                            datetime.datetime.utcnow(),
+                            datetime.datetime.utcnow(),
+                            json.dumps(change['raw_payload'])
+                        )
+                        for change in all_stage_changes
+                    ]
 
-            # Single massive insert
-            psycopg2.extras.execute_values(
-                cur, query, values,
-                template=None, page_size=1000  # Page size for memory management
-            )
-            conn.commit()
-            self.db_queries += 1
-            self.log_performance(f"Mega insert completed: {len(all_stage_changes):,} records")
+                    # Single massive insert with retry
+                    psycopg2.extras.execute_values(
+                        cur, query, values,
+                        template=None, page_size=1000
+                    )
+                    conn.commit()
+                    self.db_queries += 1
+                    self.log_performance(f"Mega insert completed: {len(all_stage_changes):,} records")
+                    return  # Success - exit retry loop
+
+            except OperationalError as e:
+                if "SSL SYSCALL error" in str(e) or "EOF detected" in str(e) or "connection" in str(e).lower():
+                    if attempt < max_retries:
+                        wait_time = (attempt + 1) * 5  # 5, 10, 15 seconds
+                        self.log_performance(
+                            f"Database connection lost, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(wait_time)
+
+                        # Try to reconnect
+                        try:
+                            conn.close()
+                        except:
+                            pass
+                        conn = self.get_connection()
+                        continue
+                    else:
+                        self.log_performance(f"Failed to insert after {max_retries} retries. Saving to backup file.")
+                        self.save_changes_to_backup_file(all_stage_changes)
+                        raise
+                else:
+                    # Different error - don't retry
+                    raise
+            except Exception as e:
+                # Any other error - save to backup and raise
+                self.log_performance(f"Unexpected error during insert: {str(e)}")
+                self.save_changes_to_backup_file(all_stage_changes)
+                raise
 
 
 def main():
