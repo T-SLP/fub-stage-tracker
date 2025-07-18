@@ -44,9 +44,9 @@ const Dashboard = () => {
         const { data: stageChanges, error: dbError } = await supabase
           .from('stage_changes')
           .select('*')
-          .in('new_stage', ['ACQ - Qualified', 'ACQ - Offers Made', 'ACQ - Price Motivated'])
-          .gte('created_at', startDate.toISOString())
-          .order('created_at', { ascending: true });
+          .in('stage_to', ['ACQ - Qualified', 'ACQ - Offers Made', 'ACQ - Price Motivated'])
+          .gte('changed_at', startDate.toISOString())
+          .order('changed_at', { ascending: true });
 
         if (dbError) {
           throw new Error(`Database error: ${dbError.message}`);
@@ -88,14 +88,14 @@ const Dashboard = () => {
 
     // Count stage changes by day
     stageChanges.forEach(change => {
-      const changeDate = new Date(change.created_at).toISOString().split('T')[0];
+      const changeDate = new Date(change.changed_at).toISOString().split('T')[0];
       const dayData = dailyData.find(d => d.date === changeDate);
       if (dayData) {
-        if (change.new_stage === 'ACQ - Qualified') {
+        if (change.stage_to === 'ACQ - Qualified') {
           dayData.qualified++;
-        } else if (change.new_stage === 'ACQ - Offers Made') {
+        } else if (change.stage_to === 'ACQ - Offers Made') {
           dayData.offers++;
-        } else if (change.new_stage === 'ACQ - Price Motivated') {
+        } else if (change.stage_to === 'ACQ - Price Motivated') {
           dayData.priceMotivated++;
         }
       }
@@ -117,11 +117,11 @@ const Dashboard = () => {
       .slice(-10)
       .reverse()
       .map(change => ({
-        name: change.person_name || 'Unknown',
-        email: change.person_email || 'No email',
-        stage: change.new_stage,
-        created_at: change.created_at,
-        previous_stage: change.old_stage
+        name: `${change.first_name || 'Unknown'} ${change.last_name || ''}`.trim(),
+        email: change.person_email || 'No email available',
+        stage: change.stage_to,
+        created_at: change.changed_at,
+        previous_stage: change.stage_from
       }));
 
     return {
