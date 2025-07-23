@@ -25,6 +25,33 @@ MAX_MEMORY_MB = 2048  # Cap total memory usage at 2GB
 MEMORY_CHECK_INTERVAL = 1000  # Check memory every N people
 FLUSH_CHANGES_THRESHOLD = 10000  # Flush to DB when this many changes accumulated (increased for 2GB)
 
+def extract_custom_fields(person):
+    """
+    Extract custom fields from FollowUpBoss person data
+    Returns dict with the custom field values or None if not present
+    """
+    return {
+        'campaign_id': person.get('customCampaignId'),
+        'who_pushed_lead': person.get('customWhoPushedTheLead'),
+        'parcel_county': person.get('customParcelCounty'),
+        'parcel_state': person.get('customParcelState')
+    }
+
+
+def extract_lead_source_tag(tags):
+    """
+    Extract specific lead source tag from tags array
+    Returns 'ReadyMode', 'Roor', or None
+    """
+    if not tags or not isinstance(tags, list):
+        return None
+
+    if "ReadyMode" in tags:
+        return "ReadyMode"
+    elif "Roor" in tags:
+        return "Roor"
+
+    return None
 
 class PerformanceOptimizedFUB:
     def __init__(self):
@@ -269,6 +296,10 @@ class PerformanceOptimizedFUB:
 
             stage_change = None
 
+            # Extract custom fields and tags for this person
+            custom_fields = extract_custom_fields(person)
+            lead_source_tag = extract_lead_source_tag(person.get('tags'))
+
             if last_stage is None:
                 # New person - track from "Contact Upload"
                 stage_change = {
@@ -277,7 +308,13 @@ class PerformanceOptimizedFUB:
                     'last_name': person.get('lastName'),
                     'stage_from': "Contact Upload",
                     'stage_to': current_stage,
-                    'raw_payload': person
+                    'raw_payload': person,
+                    # NEW: Add custom fields
+                    'campaign_id': custom_fields['campaign_id'],
+                    'who_pushed_lead': custom_fields['who_pushed_lead'],
+                    'parcel_county': custom_fields['parcel_county'],
+                    'parcel_state': custom_fields['parcel_state'],
+                    'lead_source_tag': lead_source_tag
                 }
                 logged += 1
 
@@ -289,7 +326,13 @@ class PerformanceOptimizedFUB:
                     'last_name': person.get('lastName'),
                     'stage_from': last_stage,
                     'stage_to': current_stage,
-                    'raw_payload': person
+                    'raw_payload': person,
+                    # NEW: Add custom fields
+                    'campaign_id': custom_fields['campaign_id'],
+                    'who_pushed_lead': custom_fields['who_pushed_lead'],
+                    'parcel_county': custom_fields['parcel_county'],
+                    'parcel_state': custom_fields['parcel_state'],
+                    'lead_source_tag': lead_source_tag
                 }
                 logged += 1
 
@@ -546,6 +589,10 @@ class PerformanceOptimizedFUB:
 
             last_stage = existing_stages.get(person_id)
 
+            # Extract custom fields and tags
+            custom_fields = extract_custom_fields(person)
+            lead_source_tag = extract_lead_source_tag(person.get('tags'))
+
             if last_stage is None:
                 # New person
                 changes.append({
@@ -554,7 +601,13 @@ class PerformanceOptimizedFUB:
                     'last_name': person.get('lastName'),
                     'stage_from': "Contact Upload",
                     'stage_to': current_stage,
-                    'raw_payload': person
+                    'raw_payload': person,
+                    # NEW: Add custom fields
+                    'campaign_id': custom_fields['campaign_id'],
+                    'who_pushed_lead': custom_fields['who_pushed_lead'],
+                    'parcel_county': custom_fields['parcel_county'],
+                    'parcel_state': custom_fields['parcel_state'],
+                    'lead_source_tag': lead_source_tag
                 })
             elif last_stage != current_stage:
                 # Stage change
@@ -564,7 +617,13 @@ class PerformanceOptimizedFUB:
                     'last_name': person.get('lastName'),
                     'stage_from': last_stage,
                     'stage_to': current_stage,
-                    'raw_payload': person
+                    'raw_payload': person,
+                    # NEW: Add custom fields
+                    'campaign_id': custom_fields['campaign_id'],
+                    'who_pushed_lead': custom_fields['who_pushed_lead'],
+                    'parcel_county': custom_fields['parcel_county'],
+                    'parcel_state': custom_fields['parcel_state'],
+                    'lead_source_tag': lead_source_tag
                 })
 
         return changes
@@ -584,7 +643,8 @@ class PerformanceOptimizedFUB:
                     query = """
                     INSERT INTO stage_changes (
                         person_id, deal_id, first_name, last_name,
-                        stage_from, stage_to, changed_at, received_at, raw_payload
+                        stage_from, stage_to, changed_at, received_at, raw_payload,
+                        campaign_id, who_pushed_lead, parcel_county, parcel_state, lead_source_tag
                     ) VALUES %s
                     """
 
@@ -599,7 +659,13 @@ class PerformanceOptimizedFUB:
                             change['stage_to'],
                             datetime.datetime.utcnow(),
                             datetime.datetime.utcnow(),
-                            json.dumps(change['raw_payload'])
+                            json.dumps(change['raw_payload']),
+                            # NEW: Custom fields
+                            change.get('campaign_id'),
+                            change.get('who_pushed_lead'),
+                            change.get('parcel_county'),
+                            change.get('parcel_state'),
+                            change.get('lead_source_tag')
                         )
                         for change in all_stage_changes
                     ]
