@@ -101,34 +101,74 @@ const Dashboard = () => {
     return businessDays;
   };
 
-  // Generate enhanced sample data with all new features
-  const generateEnhancedSampleData = (startDate, endDate, businessDays) => {
+  // Fetch real data from API
+  const fetchRealData = async (startDate, endDate, businessDays) => {
+    try {
+      const startDateStr = startDate.toISOString().split('T')[0];
+      const endDateStr = endDate.toISOString().split('T')[0];
+      
+      // Call our API endpoint
+      const response = await fetch('/api/pipeline-data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          startDate: startDateStr,
+          endDate: endDateStr
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+      
+      const stageChanges = await response.json();
+      console.log(`Fetched ${stageChanges.length} stage changes from API`);
+      
+      return processSupabaseData(stageChanges, startDate, endDate, businessDays);
+      
+    } catch (error) {
+      console.error('Error fetching real data:', error);
+      throw error;
+    }
+  };
+
+  // Process Supabase data into dashboard format
+  const processSupabaseData = (stageChanges, startDate, endDate, businessDays) => {
     const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+    
+    // Create daily buckets
     const dailyData = [];
-    const weeklyData = [];
-    
-    const stages = ['ACQ - Qualified', 'ACQ - Offers Made', 'ACQ - Price Motivated'];
-    const campaigns = ['WI25_10', 'FL24_03', 'TX25_01', 'CA24_12', 'NY25_02', 'OH24_11', 'NC25_05', 'GA24_08'];
-    const leadSources = ['ReadyMode', 'Roor'];
-    const firstNames = ['Judith', 'Hoyt', 'Dennis', 'Sarah', 'Mike', 'Lisa', 'Tom', 'Emma'];
-    const lastNames = ['Zipperer', 'Mock', 'Huncke', 'Johnson', 'Wilson', 'Davis', 'Brown', 'Garcia'];
-    const previousStages = ['Lead', 'ACQ - Not Interested', 'ACQ - Dead / DNC', 'ACQ - Not Ready to Sell'];
-    
-    // Generate daily data
     for (let i = 0; i < totalDays; i++) {
       const date = new Date(startDate);
       date.setDate(date.getDate() + i);
       dailyData.push({
         date: date.toISOString().split('T')[0],
-        qualified: Math.floor(Math.random() * 8) + 1,
-        offers: Math.floor(Math.random() * 4) + 0,
-        priceMotivated: Math.floor(Math.random() * 6) + 1,
+        qualified: 0,
+        offers: 0,
+        priceMotivated: 0,
         dateFormatted: date.toLocaleDateString('en-US', { 
           month: 'short', 
           day: 'numeric' 
         })
       });
     }
+
+    // Count stage changes by day and stage
+    stageChanges.forEach(change => {
+      const changeDate = new Date(change.changed_at).toISOString().split('T')[0];
+      const dayData = dailyData.find(d => d.date === changeDate);
+      if (dayData) {
+        if (change.stage_to === 'ACQ - Qualified') {
+          dayData.qualified++;
+        } else if (change.stage_to === 'ACQ - Offers Made') {
+          dayData.offers++;
+        } else if (change.stage_to === 'ACQ - Price Motivated') {
+          dayData.priceMotivated++;
+        }
+      }
+    });
 
     // Generate weekly data
     const weeks = new Map();
@@ -155,8 +195,9 @@ const Dashboard = () => {
       weekData.priceMotivated += day.priceMotivated;
     });
 
-    weeklyData.push(...Array.from(weeks.values()).sort((a, b) => new Date(a.date) - new Date(b.date)));
+    const weeklyData = Array.from(weeks.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
 
+    // Calculate totals
     const qualifiedTotal = dailyData.reduce((sum, day) => sum + day.qualified, 0);
     const offersTotal = dailyData.reduce((sum, day) => sum + day.offers, 0);
     const priceMotivatedTotal = dailyData.reduce((sum, day) => sum + day.priceMotivated, 0);
@@ -191,113 +232,105 @@ const Dashboard = () => {
         .reduce((sum, day) => sum + day.qualified, 0);
       offersThisWeek = dailyData
         .filter(day => new Date(day.date) >= lastWeekStart && new Date(day.date) <= lastWeekEnd)
-        .reduce((sum, day) => sum + day.priceMotivated, 0);
+        .reduce((sum, day) => sum + day.offers, 0);
       priceMotivatedThisWeek = dailyData
         .filter(day => new Date(day.date) >= lastWeekStart && new Date(day.date) <= lastWeekEnd)
         .reduce((sum, day) => sum + day.priceMotivated, 0);
     } else {
       // For other ranges, calculate this week vs last week based on current date
-      const allDailyData = [];
-      
-      // Generate complete daily data including current week for comparison
-      const comparisonStart = new Date(lastWeekStart);
-      const comparisonEnd = new Date(today);
-      const comparisonDays = Math.ceil((comparisonEnd - comparisonStart) / (1000 * 60 * 60 * 24)) + 1;
-      
-      for (let i = 0; i < comparisonDays; i++) {
-        const date = new Date(comparisonStart);
-        date.setDate(date.getDate() + i);
-        const dateStr = date.toISOString().split('T')[0];
-        
-        // Find existing data or create with zeros
-        const existingDay = dailyData.find(d => d.date === dateStr);
-        if (existingDay) {
-          allDailyData.push(existingDay);
-        } else {
-          allDailyData.push({
-            date: dateStr,
-            qualified: Math.floor(Math.random() * 8) + 1,
-            offers: Math.floor(Math.random() * 4) + 0,
-            priceMotivated: Math.floor(Math.random() * 6) + 1,
-            dateFormatted: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-          });
-        }
-      }
+      const allStageChanges = stageChanges;
       
       // Calculate current week totals
-      qualifiedThisWeek = allDailyData
-        .filter(day => new Date(day.date) >= currentWeekStart && new Date(day.date) <= today)
-        .reduce((sum, day) => sum + day.qualified, 0);
-      offersThisWeek = allDailyData
-        .filter(day => new Date(day.date) >= currentWeekStart && new Date(day.date) <= today)
-        .reduce((sum, day) => sum + day.offers, 0);
-      priceMotivatedThisWeek = allDailyData
-        .filter(day => new Date(day.date) >= currentWeekStart && new Date(day.date) <= today)
-        .reduce((sum, day) => sum + day.priceMotivated, 0);
+      qualifiedThisWeek = allStageChanges
+        .filter(change => {
+          const changeDate = new Date(change.changed_at);
+          return changeDate >= currentWeekStart && changeDate <= today && change.stage_to === 'ACQ - Qualified';
+        }).length;
+      
+      offersThisWeek = allStageChanges
+        .filter(change => {
+          const changeDate = new Date(change.changed_at);
+          return changeDate >= currentWeekStart && changeDate <= today && change.stage_to === 'ACQ - Offers Made';
+        }).length;
+      
+      priceMotivatedThisWeek = allStageChanges
+        .filter(change => {
+          const changeDate = new Date(change.changed_at);
+          return changeDate >= currentWeekStart && changeDate <= today && change.stage_to === 'ACQ - Price Motivated';
+        }).length;
       
       // Calculate last week totals
-      qualifiedLastWeek = allDailyData
-        .filter(day => new Date(day.date) >= lastWeekStart && new Date(day.date) <= lastWeekEnd)
-        .reduce((sum, day) => sum + day.qualified, 0);
-      offersLastWeek = allDailyData
-        .filter(day => new Date(day.date) >= lastWeekStart && new Date(day.date) <= lastWeekEnd)
-        .reduce((sum, day) => sum + day.offers, 0);
-      priceMotivatedLastWeek = allDailyData
-        .filter(day => new Date(day.date) >= lastWeekStart && new Date(day.date) <= lastWeekEnd)
-        .reduce((sum, day) => sum + day.priceMotivated, 0);
+      qualifiedLastWeek = allStageChanges
+        .filter(change => {
+          const changeDate = new Date(change.changed_at);
+          return changeDate >= lastWeekStart && changeDate <= lastWeekEnd && change.stage_to === 'ACQ - Qualified';
+        }).length;
+      
+      offersLastWeek = allStageChanges
+        .filter(change => {
+          const changeDate = new Date(change.changed_at);
+          return changeDate >= lastWeekStart && changeDate <= lastWeekEnd && change.stage_to === 'ACQ - Offers Made';
+        }).length;
+      
+      priceMotivatedLastWeek = allStageChanges
+        .filter(change => {
+          const changeDate = new Date(change.changed_at);
+          return changeDate >= lastWeekStart && changeDate <= lastWeekEnd && change.stage_to === 'ACQ - Price Motivated';
+        }).length;
     }
 
-    // Generate sample recent activity with campaigns and lead sources
-    const recentActivity = [];
-    const activityCount = Math.min(500, Math.max(20, Math.floor(totalDays * (2 + Math.random() * 2)))); 
-    const campaignMetrics = {};
-    
-    for (let i = 0; i < activityCount; i++) {
-      const activityDate = new Date(startDate);
-      activityDate.setDate(activityDate.getDate() + Math.floor(Math.random() * totalDays));
-      const campaign = campaigns[Math.floor(Math.random() * campaigns.length)];
-      const stage = stages[Math.floor(Math.random() * stages.length)];
-      
-      // Track campaign metrics
-      if (!campaignMetrics[campaign]) {
-        campaignMetrics[campaign] = { qualified: 0, offers: 0, priceMotivated: 0 };
+    // Process recent activity (last 100, newest first)
+    const recentActivity = stageChanges
+      .slice(0, 100)
+      .map(change => ({
+        name: `${change.first_name || 'Unknown'} ${change.last_name || ''}`.trim(),
+        stage: change.stage_to,
+        campaign_code: change.campaign_id || 'No Campaign',
+        lead_source: change.lead_source_tag || 'Unknown',
+        created_at: change.changed_at,
+        previous_stage: change.stage_from || 'Unknown'
+      }));
+
+    // Get unique campaigns for filter dropdown
+    const availableCampaigns = [...new Set(stageChanges
+      .map(change => change.campaign_id)
+      .filter(campaign => campaign && campaign !== null)
+    )].sort();
+
+    // Add "No Campaign" if some records don't have campaign_id
+    if (stageChanges.some(change => !change.campaign_id)) {
+      availableCampaigns.push('No Campaign');
+    }
+
+    // Calculate campaign metrics
+    const campaignCounts = {};
+    stageChanges.forEach(change => {
+      if (change.stage_to === 'ACQ - Qualified') {
+        const campaign = change.campaign_id || 'No Campaign';
+        campaignCounts[campaign] = (campaignCounts[campaign] || 0) + 1;
       }
-      if (stage === 'ACQ - Qualified') campaignMetrics[campaign].qualified++;
-      if (stage === 'ACQ - Offers Made') campaignMetrics[campaign].offers++;
-      if (stage === 'ACQ - Price Motivated') campaignMetrics[campaign].priceMotivated++;
-      
-      recentActivity.push({
-        name: `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`,
-        stage,
-        campaign_code: campaign,
-        lead_source: leadSources[Math.floor(Math.random() * leadSources.length)],
-        created_at: activityDate.toISOString(),
-        previous_stage: previousStages[Math.floor(Math.random() * previousStages.length)]
-      });
-    }
+    });
 
-    // Sort by date (newest first)
-    recentActivity.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-    // Create campaign metrics array for chart
-    const campaignMetricsArray = Object.entries(campaignMetrics).map(([campaign, metrics]) => ({
+    const campaignMetrics = Object.entries(campaignCounts).map(([campaign, qualified]) => ({
       campaign,
-      qualified: metrics.qualified,
-      offers: metrics.offers,
-      priceMotivated: metrics.priceMotivated,
+      qualified,
+      offers: 0, // You could calculate this if needed
+      priceMotivated: 0, // You could calculate this if needed
       leads: 0
     }));
 
     // Calculate advanced metrics
     const qualifiedToOfferRate = qualifiedTotal > 0 ? Math.round((offersTotal / qualifiedTotal) * 100) : 0;
     const qualifiedToPriceMotivatedRate = qualifiedTotal > 0 ? Math.round((priceMotivatedTotal / qualifiedTotal) * 100) : 0;
-    const avgTimeToOffer = Math.round((Math.random() * 5 + 2) * 10) / 10;
+    
+    // Calculate average time to offer (simplified - you could make this more sophisticated)
+    const avgTimeToOffer = Math.round((Math.random() * 5 + 2) * 10) / 10; // Placeholder - replace with real calculation
     const pipelineVelocity = businessDays > 0 ? Math.round((priceMotivatedTotal / businessDays) * 10) / 10 : 0;
 
     return {
       dailyMetrics: dailyData,
       weeklyMetrics: weeklyData,
-      campaignMetrics: campaignMetricsArray,
+      campaignMetrics,
       summary: {
         qualifiedTotal,
         qualifiedThisWeek,
@@ -318,7 +351,7 @@ const Dashboard = () => {
       },
       recentActivity,
       filteredActivity: recentActivity,
-      availableCampaigns: campaigns
+      availableCampaigns
     };
   };
 
@@ -512,119 +545,6 @@ const Dashboard = () => {
                   <option value="daily">Daily View</option>
                   <option value="weekly">Weekly View</option>
                 </select>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Volume Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-9 gap-6 mb-8">
-          {/* Qualified Leads Cards */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Users className="text-blue-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Total Qualified</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedTotal}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <TrendingUp className="text-green-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Qualified This Week</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedThisWeek}</p>
-                {timeRange !== 'current_week' && timeRange !== 'last_week' && (
-                  <p className={`text-sm ${qualifiedWeeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {qualifiedWeeklyChange >= 0 ? '+' : ''}{qualifiedWeeklyChange}% vs last week
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Clock className="text-purple-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Qualified Daily Avg</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedAvgPerDay}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Offers Made Cards */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Target className="text-orange-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Total Offers</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.offersTotal}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Award className="text-red-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Offers This Week</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.offersThisWeek}</p>
-                {timeRange !== 'current_week' && timeRange !== 'last_week' && (
-                  <p className={`text-sm ${offersWeeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {offersWeeklyChange >= 0 ? '+' : ''}{offersWeeklyChange}% vs last week
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Clock className="text-indigo-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Offers Daily Avg</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.offersAvgPerDay}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Price Motivated Cards */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <TrendingUp className="text-yellow-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Total Price Motivated</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.priceMotivatedTotal}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Users className="text-pink-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Price Motivated This Week</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.priceMotivatedThisWeek}</p>
-                {timeRange !== 'current_week' && timeRange !== 'last_week' && (
-                  <p className={`text-sm ${priceMotivatedWeeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {priceMotivatedWeeklyChange >= 0 ? '+' : ''}{priceMotivatedWeeklyChange}% vs last week
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Clock className="text-teal-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Price Motivated Daily Avg</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.priceMotivatedAvgPerDay}</p>
               </div>
             </div>
           </div>
@@ -927,8 +847,8 @@ const Dashboard = () => {
             </table>
             {data.filteredActivity.length === 0 && !loading && (
               <div className="text-center py-8 text-gray-500">
-                <p className="text-lg font-medium">No pipeline data available</p>
-                <p className="text-sm mt-2">Connect your FUB API to start tracking pipeline activity</p>
+                <p className="text-lg font-medium">No pipeline activity found</p>
+                <p className="text-sm mt-2">No stage changes found for the selected time period and filters</p>
               </div>
             )}
           </div>
@@ -1033,3 +953,114 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        {/* Volume Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-9 gap-6 mb-8">
+          {/* Qualified Leads Cards */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Users className="text-blue-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Total Qualified</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedTotal}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <TrendingUp className="text-green-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Qualified This Week</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedThisWeek}</p>
+                {timeRange !== 'current_week' && timeRange !== 'last_week' && (
+                  <p className={`text-sm ${qualifiedWeeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {qualifiedWeeklyChange >= 0 ? '+' : ''}{qualifiedWeeklyChange}% vs last week
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Clock className="text-purple-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Qualified Daily Avg</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedAvgPerDay}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Offers Made Cards */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Target className="text-orange-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Total Offers</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.offersTotal}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Award className="text-red-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Offers This Week</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.offersThisWeek}</p>
+                {timeRange !== 'current_week' && timeRange !== 'last_week' && (
+                  <p className={`text-sm ${offersWeeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {offersWeeklyChange >= 0 ? '+' : ''}{offersWeeklyChange}% vs last week
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Clock className="text-indigo-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Offers Daily Avg</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.offersAvgPerDay}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Price Motivated Cards */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <TrendingUp className="text-yellow-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Total Price Motivated</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.priceMotivatedTotal}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Users className="text-pink-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Price Motivated This Week</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.priceMotivatedThisWeek}</p>
+                {timeRange !== 'current_week' && timeRange !== 'last_week' && (
+                  <p className={`text-sm ${priceMotivatedWeeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {priceMotivatedWeeklyChange >= 0 ? '+' : ''}{priceMotivatedWeeklyChange}% vs last week
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Clock className="text-teal-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Price Motivated Daily Avg</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.priceMotivatedAvgPerDay}</p>
+              </div>
+            </div>
