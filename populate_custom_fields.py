@@ -21,15 +21,23 @@ SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
 
 
 def extract_custom_fields(person):
+    """
+    Extract custom fields from FollowUpBoss person data
+    Returns dict with the custom field values or None if not present
+    """
     return {
-        'campaign_id': person.get('customCampaignID'),  # CORRECT: customCampaignID (with capital D)
-        'who_pushed_lead': person.get('customWhoPushedTheLead'),  # Already correct
-        'parcel_county': person.get('customParcelCounty'),  # Already correct
-        'parcel_state': person.get('customParcelState')  # Already correct
+        'campaign_id': person.get('customCampaignID'),
+        'who_pushed_lead': person.get('customWhoPushedTheLead'),
+        'parcel_county': person.get('customParcelCounty'),
+        'parcel_state': person.get('customParcelState')
     }
 
+
 def extract_lead_source_tag(tags):
-    """Extract specific lead source tag from tags array"""
+    """
+    Extract specific lead source tag from tags array
+    Returns 'ReadyMode', 'Roor', or None
+    """
     if not tags or not isinstance(tags, list):
         return None
 
@@ -42,8 +50,8 @@ def extract_lead_source_tag(tags):
 
 
 def get_fub_person(person_id):
-    """Fetch a single person from FollowUpBoss API"""
-    url = f"https://api.followupboss.com/v1/people/{person_id}?fields=allFields"  # ADD THIS!
+    """Fetch a single person from FollowUpBoss API - Updated for consistency with main script"""
+    url = f"https://api.followupboss.com/v1/people/{person_id}"
 
     # Get environment variables with fallback
     fub_api_key = os.getenv('FUB_API_KEY')
@@ -64,8 +72,11 @@ def get_fub_person(person_id):
         "X-System-Key": fub_system_key
     }
 
+    # Use params like the main script for consistency
+    params = {"fields": "allFields"}
+
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, params=params)
 
         if response.status_code == 200:
             return response.json()
@@ -248,6 +259,14 @@ def populate_specific_person(person_id):
     custom_fields = extract_custom_fields(person_data)
     custom_fields['lead_source_tag'] = extract_lead_source_tag(person_data.get('tags'))
 
+    # Show what we found
+    print(f"Custom fields found:")
+    print(f"  Campaign ID: {custom_fields['campaign_id']}")
+    print(f"  Who Pushed Lead: {custom_fields['who_pushed_lead']}")
+    print(f"  Parcel County: {custom_fields['parcel_county']}")
+    print(f"  Parcel State: {custom_fields['parcel_state']}")
+    print(f"  Lead Source Tag: {custom_fields['lead_source_tag']}")
+
     # Get all records for this person
     with conn.cursor() as cur:
         cur.execute("SELECT id FROM stage_changes WHERE person_id = %s", (person_id,))
@@ -304,6 +323,22 @@ def check_sample_data():
             print()
     else:
         print("No records found with custom field data yet")
+
+    # Also check how many records need updating
+    with conn.cursor() as cur:
+        query = """
+        SELECT COUNT(*) 
+        FROM stage_changes 
+        WHERE campaign_id IS NULL 
+           AND who_pushed_lead IS NULL 
+           AND parcel_county IS NULL 
+           AND parcel_state IS NULL 
+           AND lead_source_tag IS NULL
+        """
+        cur.execute(query)
+        null_count = cur.fetchone()[0]
+
+    print(f"Records that need updating (all custom fields NULL): {null_count}")
 
     conn.close()
 
