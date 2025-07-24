@@ -344,6 +344,12 @@ const Dashboard = () => {
       leads: 0
     }));
 
+    // Calculate advanced metrics - THESE WERE MISSING
+    const qualifiedToOfferRate = qualifiedTotal > 0 ? Math.round((offersTotal / qualifiedTotal) * 100) : 0;
+    const qualifiedToPriceMotivatedRate = qualifiedTotal > 0 ? Math.round((priceMotivatedTotal / qualifiedTotal) * 100) : 0;
+    const avgTimeToOffer = Math.round((Math.random() * 5 + 2) * 10) / 10; // Placeholder
+    const pipelineVelocity = businessDays > 0 ? Math.round((priceMotivatedTotal / businessDays) * 10) / 10 : 0;
+
     return {
       dailyMetrics: dailyData,
       weeklyMetrics: weeklyData,
@@ -482,17 +488,6 @@ const Dashboard = () => {
         const businessDays = getBusinessDays(start, end);
         const realData = await fetchRealData(start, end, businessDays);
         
-        // Calculate advanced metrics that were removed from processSupabaseData
-        const qualifiedToOfferRate = realData.summary.qualifiedTotal > 0 ? Math.round((realData.summary.offersTotal / realData.summary.qualifiedTotal) * 100) : 0;
-        const qualifiedToPriceMotivatedRate = realData.summary.qualifiedTotal > 0 ? Math.round((realData.summary.priceMotivatedTotal / realData.summary.qualifiedTotal) * 100) : 0;
-        const avgTimeToOffer = Math.round((Math.random() * 5 + 2) * 10) / 10; // Placeholder
-        const pipelineVelocity = businessDays > 0 ? Math.round((realData.summary.priceMotivatedTotal / businessDays) * 10) / 10 : 0;
-        
-        realData.summary.qualifiedToOfferRate = qualifiedToOfferRate;
-        realData.summary.qualifiedToPriceMotivatedRate = qualifiedToPriceMotivatedRate;
-        realData.summary.avgTimeToOffer = avgTimeToOffer;
-        realData.summary.pipelineVelocity = pipelineVelocity;
-        
         setData(realData);
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -564,6 +559,7 @@ const Dashboard = () => {
       fetchLeadSourceData();
     }
   }, [leadSourceTimeRange, leadSourceCustomStartDate, leadSourceCustomEndDate]);
+  
   // Update filtered activity when filters change
   useEffect(() => {
     setCurrentPage(1);
