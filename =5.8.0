@@ -1,0 +1,8 @@
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: requests in c:\users\travis\appdata\roaming\python\python39\site-packages (2.25.1)
+Requirement already satisfied: psycopg2-binary in c:\users\travis\appdata\roaming\python\python39\site-packages (2.9.10)
+Requirement already satisfied: psutil in c:\users\travis\appdata\roaming\python\python39\site-packages (7.0.0)
+Requirement already satisfied: chardet<5,>=3.0.2 in c:\users\travis\appdata\roaming\python\python39\site-packages (from requests) (4.0.0)
+Requirement already satisfied: idna<3,>=2.5 in c:\users\travis\appdata\roaming\python\python39\site-packages (from requests) (2.10)
+Requirement already satisfied: urllib3<1.27,>=1.21.1 in c:\users\travis\appdata\roaming\python\python39\site-packages (from requests) (1.26.5)
+Requirement already satisfied: certifi>=2017.4.17 in c:\users\travis\appdata\roaming\python\python39\site-packages (from requests) (2025.4.26)
