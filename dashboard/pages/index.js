@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, ResponsiveContainer } from 'recharts';
-import { Calendar, TrendingUp, Users, Clock, Target, Award, Filter } from 'lucide-react';
+import { Calendar, TrendingUp, Users, Clock, Target, Award, Filter, Percent, Zap } from 'lucide-react';
+// import { createClient } from '@supabase/supabase-js';
+
+// TODO: Uncomment and add your Supabase credentials when ready to use real data
+// const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+// const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// const supabase = createClient(supabaseUrl, supabaseKey);
 
 const Dashboard = () => {
   const [timeRange, setTimeRange] = useState('7d');
@@ -13,11 +19,13 @@ const Dashboard = () => {
     priceMotivated: true
   });
   const [stageFilter, setStageFilter] = useState('all');
+  const [campaignFilter, setCampaignFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 25;
   const [data, setData] = useState({
     dailyMetrics: [],
     weeklyMetrics: [],
+    campaignMetrics: [],
     summary: { 
       qualifiedTotal: 0, 
       qualifiedThisWeek: 0, 
@@ -30,12 +38,19 @@ const Dashboard = () => {
       priceMotivatedLastWeek: 0,
       qualifiedAvgPerDay: 0,
       offersAvgPerDay: 0,
-      priceMotivatedAvgPerDay: 0
+      priceMotivatedAvgPerDay: 0,
+      // New advanced metrics
+      qualifiedToOfferRate: 0,
+      qualifiedToPriceMotivatedRate: 0,
+      avgTimeToOffer: 0,
+      pipelineVelocity: 0
     },
     recentActivity: [],
-    filteredActivity: []
+    filteredActivity: [],
+    availableCampaigns: []
   });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Helper function to get week start (Sunday)
   const getWeekStart = (date) => {
@@ -96,40 +111,237 @@ const Dashboard = () => {
     return businessDays;
   };
 
+  // TODO: Replace this with real Supabase data fetching
+  const fetchSupabaseData = async (startDate, endDate, businessDays) => {
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+
+    try {
+      // TODO: Uncomment when ready to use real Supabase data
+      /*
+      const { data: activityData, error: activityError } = await supabase
+        .from('stage_changes')
+        .select(`
+          first_name,
+          last_name,
+          stage_to,
+          campaign_id,
+          lead_source_tag,
+          stage_from,
+          changed_at
+        `)
+        .gte('changed_at', startDateStr)
+        .lte('changed_at', endDateStr + ' 23:59:59')
+        .in('stage_to', ['ACQ - Qualified', 'ACQ - Offers Made', 'ACQ - Price Motivated'])
+        .order('changed_at', { ascending: false });
+
+      if (activityError) throw activityError;
+      return processSupabaseData(activityData || [], startDate, endDate, businessDays);
+      */
+
+      // Mock data for development - remove when using real Supabase
+      return generateEnhancedSampleData(startDate, endDate, businessDays);
+      
+    } catch (error) {
+      console.error('Error fetching Supabase data:', error);
+      throw error;
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
-      // Simulate loading delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      setError(null);
       
-      const { start, end } = getDateRange();
-      const businessDays = getBusinessDays(start, end);
-      const sampleData = generateSampleData(start, end, businessDays);
-      setData(sampleData);
+      try {
+        const { start, end } = getDateRange();
+        const businessDays = getBusinessDays(start, end);
+        const realData = await fetchSupabaseData(start, end, businessDays);
+        setData(realData);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        setError('Failed to load data. Please check your connection and try again.');
+        // Fallback to sample data
+        const { start, end } = getDateRange();
+        const businessDays = getBusinessDays(start, end);
+        const sampleData = generateEnhancedSampleData(start, end, businessDays);
+        setData(sampleData);
+      }
+      
       setLoading(false);
     };
 
-    fetchData();
+    // Only fetch data if we have both custom dates when custom is selected, or for other time ranges
+    if (timeRange === 'custom') {
+      if (customStartDate && customEndDate) {
+        // Add a small delay to prevent fetching while user is still typing
+        const timeoutId = setTimeout(fetchData, 500);
+        return () => clearTimeout(timeoutId);
+      }
+    } else {
+      fetchData();
+    }
   }, [timeRange, customStartDate, customEndDate]);
 
-  // Update filtered activity when stage filter changes
+  // Update filtered activity when filters change
   useEffect(() => {
     setCurrentPage(1); // Reset to first page when filter changes
-    if (stageFilter === 'all') {
-      setData(prev => ({ ...prev, filteredActivity: prev.recentActivity }));
-    } else {
-      setData(prev => ({ 
-        ...prev, 
-        filteredActivity: prev.recentActivity.filter(activity => activity.stage === stageFilter)
-      }));
+    let filtered = data.recentActivity;
+    
+    if (stageFilter !== 'all') {
+      filtered = filtered.filter(activity => activity.stage === stageFilter);
     }
-  }, [stageFilter, data.recentActivity]);
+    
+    if (campaignFilter !== 'all') {
+      filtered = filtered.filter(activity => activity.campaign_code === campaignFilter);
+    }
+    
+    setData(prev => ({ ...prev, filteredActivity: filtered }));
+  }, [stageFilter, campaignFilter, data.recentActivity]);
 
-  // Generate sample data based on date range
-  const generateSampleData = (startDate, endDate, businessDays) => {
+  // Process Supabase data into dashboard format
+  const processSupabaseData = (activityData, startDate, endDate, businessDays) => {
+    // Convert activity data to dashboard format
+    const recentActivity = activityData.map(activity => ({
+      name: `${activity.first_name} ${activity.last_name}`,
+      stage: activity.stage_to,
+      campaign_code: activity.campaign_id || 'No Campaign',
+      lead_source: activity.lead_source_tag || 'Unknown',
+      created_at: activity.changed_at,
+      previous_stage: activity.stage_from || 'Unknown'
+    }));
+
+    // Get unique campaigns for filter dropdown
+    const availableCampaigns = [...new Set(recentActivity
+      .map(a => a.campaign_code)
+      .filter(c => c && c !== 'No Campaign')
+    )].sort();
+
+    if (recentActivity.some(a => a.campaign_code === 'No Campaign')) {
+      availableCampaigns.push('No Campaign');
+    }
+
+    // Calculate daily metrics
+    const dailyMetrics = calculateDailyMetrics(activityData, startDate, endDate);
+    
+    // Generate weekly metrics
+    const weeklyMetrics = generateWeeklyMetrics(dailyMetrics);
+
+    // Calculate campaign metrics
+    const campaignCounts = {};
+    activityData.forEach(activity => {
+      if (activity.stage_to === 'ACQ - Qualified' && activity.campaign_id) {
+        campaignCounts[activity.campaign_id] = (campaignCounts[activity.campaign_id] || 0) + 1;
+      }
+    });
+
+    const campaignMetrics = Object.entries(campaignCounts).map(([campaign, qualified]) => ({
+      campaign,
+      qualified,
+      offers: 0,
+      priceMotivated: 0,
+      leads: 0
+    }));
+
+    // Calculate totals and advanced metrics
+    const qualifiedTotal = dailyMetrics.reduce((sum, day) => sum + day.qualified, 0);
+    const offersTotal = dailyMetrics.reduce((sum, day) => sum + day.offers, 0);
+    const priceMotivatedTotal = dailyMetrics.reduce((sum, day) => sum + day.priceMotivated, 0);
+
+    // Week calculations
+    let qualifiedThisWeek = 0, qualifiedLastWeek = 0;
+    let offersThisWeek = 0, offersLastWeek = 0;
+    let priceMotivatedThisWeek = 0, priceMotivatedLastWeek = 0;
+
+    if (timeRange === 'current_week' || timeRange === 'last_week') {
+      qualifiedThisWeek = qualifiedTotal;
+      offersThisWeek = offersTotal;
+      priceMotivatedThisWeek = priceMotivatedTotal;
+    } else if (dailyMetrics.length >= 14) {
+      qualifiedThisWeek = dailyMetrics.slice(-7).reduce((sum, day) => sum + day.qualified, 0);
+      qualifiedLastWeek = dailyMetrics.slice(-14, -7).reduce((sum, day) => sum + day.qualified, 0);
+      offersThisWeek = dailyMetrics.slice(-7).reduce((sum, day) => sum + day.offers, 0);
+      offersLastWeek = dailyMetrics.slice(-14, -7).reduce((sum, day) => sum + day.offers, 0);
+      priceMotivatedThisWeek = dailyMetrics.slice(-7).reduce((sum, day) => sum + day.priceMotivated, 0);
+      priceMotivatedLastWeek = dailyMetrics.slice(-14, -7).reduce((sum, day) => sum + day.priceMotivated, 0);
+    }
+
+    // Calculate advanced metrics
+    const qualifiedToOfferRate = qualifiedTotal > 0 ? Math.round((offersTotal / qualifiedTotal) * 100) : 0;
+    const qualifiedToPriceMotivatedRate = qualifiedTotal > 0 ? Math.round((priceMotivatedTotal / qualifiedTotal) * 100) : 0;
+    const avgTimeToOffer = Math.round((Math.random() * 5 + 2) * 10) / 10; // TODO: Calculate from real timestamp data
+    const pipelineVelocity = businessDays > 0 ? Math.round((priceMotivatedTotal / businessDays) * 10) / 10 : 0;
+
+    return {
+      dailyMetrics,
+      weeklyMetrics,
+      campaignMetrics,
+      summary: {
+        qualifiedTotal,
+        qualifiedThisWeek,
+        qualifiedLastWeek,
+        offersTotal,
+        offersThisWeek,
+        offersLastWeek,
+        priceMotivatedTotal,
+        priceMotivatedThisWeek,
+        priceMotivatedLastWeek,
+        qualifiedAvgPerDay: businessDays > 0 ? Math.round((qualifiedTotal / businessDays) * 10) / 10 : 0,
+        offersAvgPerDay: businessDays > 0 ? Math.round((offersTotal / businessDays) * 10) / 10 : 0,
+        priceMotivatedAvgPerDay: businessDays > 0 ? Math.round((priceMotivatedTotal / businessDays) * 10) / 10 : 0,
+        qualifiedToOfferRate,
+        qualifiedToPriceMotivatedRate,
+        avgTimeToOffer,
+        pipelineVelocity
+      },
+      recentActivity,
+      filteredActivity: recentActivity,
+      availableCampaigns
+    };
+  };
+
+  // Calculate daily metrics from activity data
+  const calculateDailyMetrics = (activityData, startDate, endDate) => {
+    const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+    const dailyMetrics = [];
+
+    for (let i = 0; i < totalDays; i++) {
+      const date = new Date(startDate);
+      date.setDate(date.getDate() + i);
+      const dateStr = date.toISOString().split('T')[0];
+      
+      const dayActivities = activityData.filter(activity => 
+        activity.changed_at.split('T')[0] === dateStr
+      );
+
+      dailyMetrics.push({
+        date: dateStr,
+        qualified: dayActivities.filter(a => a.stage_to === 'ACQ - Qualified').length,
+        offers: dayActivities.filter(a => a.stage_to === 'ACQ - Offers Made').length,
+        priceMotivated: dayActivities.filter(a => a.stage_to === 'ACQ - Price Motivated').length,
+        dateFormatted: date.toLocaleDateString('en-US', { 
+          month: 'short', 
+          day: 'numeric' 
+        })
+      });
+    }
+
+    return dailyMetrics;
+  };
+
+  // Generate enhanced sample data with all new features
+  const generateEnhancedSampleData = (startDate, endDate, businessDays) => {
     const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
     const dailyData = [];
     const weeklyData = [];
+    
+    // Your actual data structure
+    const stages = ['ACQ - Qualified', 'ACQ - Offers Made', 'ACQ - Price Motivated'];
+    const campaigns = ['Google-PPC-2024', 'Facebook-Lead-Gen', 'Direct-Mail-Campaign', 'SEO-Organic', 'Referral-Program', 'Cold-Outreach'];
+    const leadSources = ['ReadyMode', 'Roor']; // Your actual lead sources
+    const firstNames = ['Judith', 'Hoyt', 'Dennis', 'Sarah', 'Mike', 'Lisa', 'Tom', 'Emma'];
+    const lastNames = ['Zipperer', 'Mock', 'Huncke', 'Johnson', 'Wilson', 'Davis', 'Brown', 'Garcia'];
+    const previousStages = ['Lead', 'ACQ - Not Interested', 'ACQ - Dead / DNC', 'ACQ - Not Ready to Sell'];
     
     // Generate daily data
     for (let i = 0; i < totalDays; i++) {
@@ -196,22 +408,30 @@ const Dashboard = () => {
       priceMotivatedLastWeek = dailyData.slice(-14, -7).reduce((sum, day) => sum + day.priceMotivated, 0);
     }
 
-    // Generate sample recent activity based on date range
-    const sampleNames = ['John Smith', 'Sarah Johnson', 'Mike Wilson', 'Lisa Davis', 'Tom Brown', 'Emma Wilson', 'James Taylor', 'Ashley Garcia', 'David Martinez', 'Jessica Rodriguez', 'Chris Anderson', 'Maria Lopez', 'Robert Chen', 'Amanda White', 'Brian Johnson'];
-    const stages = ['ACQ - Qualified', 'ACQ - Offers Made', 'ACQ - Price Motivated'];
-    const previousStages = ['ACQ - New Lead', 'ACQ - Contacted', 'ACQ - Qualified', 'ACQ - Follow Up'];
-    
+    // Generate sample recent activity with campaigns and lead sources
     const recentActivity = [];
-    // Scale activity with date range: roughly 2-4 activities per day
     const activityCount = Math.min(500, Math.max(20, Math.floor(totalDays * (2 + Math.random() * 2)))); 
+    const campaignMetrics = {};
     
     for (let i = 0; i < activityCount; i++) {
       const activityDate = new Date(startDate);
       activityDate.setDate(activityDate.getDate() + Math.floor(Math.random() * totalDays));
+      const campaign = campaigns[Math.floor(Math.random() * campaigns.length)];
+      const stage = stages[Math.floor(Math.random() * stages.length)];
+      
+      // Track campaign metrics
+      if (!campaignMetrics[campaign]) {
+        campaignMetrics[campaign] = { qualified: 0, offers: 0, priceMotivated: 0 };
+      }
+      if (stage === 'ACQ - Qualified') campaignMetrics[campaign].qualified++;
+      if (stage === 'ACQ - Offers Made') campaignMetrics[campaign].offers++;
+      if (stage === 'ACQ - Price Motivated') campaignMetrics[campaign].priceMotivated++;
       
       recentActivity.push({
-        name: sampleNames[Math.floor(Math.random() * sampleNames.length)],
-        stage: stages[Math.floor(Math.random() * stages.length)],
+        name: `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`,
+        stage,
+        campaign_code: campaign,
+        lead_source: leadSources[Math.floor(Math.random() * leadSources.length)],
         created_at: activityDate.toISOString(),
         previous_stage: previousStages[Math.floor(Math.random() * previousStages.length)]
       });
@@ -220,9 +440,25 @@ const Dashboard = () => {
     // Sort by date (newest first)
     recentActivity.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
+    // Create campaign metrics array for chart
+    const campaignMetricsArray = Object.entries(campaignMetrics).map(([campaign, metrics]) => ({
+      campaign,
+      qualified: metrics.qualified,
+      offers: metrics.offers,
+      priceMotivated: metrics.priceMotivated,
+      leads: 0
+    }));
+
+    // Calculate advanced metrics
+    const qualifiedToOfferRate = qualifiedTotal > 0 ? Math.round((offersTotal / qualifiedTotal) * 100) : 0;
+    const qualifiedToPriceMotivatedRate = qualifiedTotal > 0 ? Math.round((priceMotivatedTotal / qualifiedTotal) * 100) : 0;
+    const avgTimeToOffer = Math.round((Math.random() * 5 + 2) * 10) / 10; // 2-7 days average
+    const pipelineVelocity = businessDays > 0 ? Math.round((priceMotivatedTotal / businessDays) * 10) / 10 : 0;
+
     return {
       dailyMetrics: dailyData,
       weeklyMetrics: weeklyData,
+      campaignMetrics: campaignMetricsArray,
       summary: {
         qualifiedTotal,
         qualifiedThisWeek,
@@ -235,11 +471,46 @@ const Dashboard = () => {
         priceMotivatedLastWeek,
         qualifiedAvgPerDay: businessDays > 0 ? Math.round((qualifiedTotal / businessDays) * 10) / 10 : 0,
         offersAvgPerDay: businessDays > 0 ? Math.round((offersTotal / businessDays) * 10) / 10 : 0,
-        priceMotivatedAvgPerDay: businessDays > 0 ? Math.round((priceMotivatedTotal / businessDays) * 10) / 10 : 0
+        priceMotivatedAvgPerDay: businessDays > 0 ? Math.round((priceMotivatedTotal / businessDays) * 10) / 10 : 0,
+        qualifiedToOfferRate,
+        qualifiedToPriceMotivatedRate,
+        avgTimeToOffer,
+        pipelineVelocity
       },
       recentActivity,
-      filteredActivity: recentActivity
+      filteredActivity: recentActivity,
+      availableCampaigns: campaigns
     };
+  };
+
+  // Generate weekly metrics from daily data
+  const generateWeeklyMetrics = (dailyData) => {
+    const weeks = new Map();
+    
+    dailyData.forEach(day => {
+      const date = new Date(day.date);
+      const weekStart = getWeekStart(date);
+      const weekKey = weekStart.toISOString().split('T')[0];
+      
+      if (!weeks.has(weekKey)) {
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        weeks.set(weekKey, {
+          date: weekKey,
+          qualified: 0,
+          offers: 0,
+          priceMotivated: 0,
+          dateFormatted: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+        });
+      }
+
+      const weekData = weeks.get(weekKey);
+      weekData.qualified += day.qualified;
+      weekData.offers += day.offers;
+      weekData.priceMotivated += day.priceMotivated;
+    });
+
+    return Array.from(weeks.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
   };
 
   const getChangePercentage = (current, previous) => {
@@ -281,6 +552,23 @@ const Dashboard = () => {
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-600 mb-4">⚠️</div>
+          <p className="text-gray-600">{error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -289,7 +577,7 @@ const Dashboard = () => {
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">FUB Pipeline Dashboard</h1>
-              <p className="text-gray-600 mt-1">Track qualified leads, offers made, and price motivated leads</p>
+              <p className="text-gray-600 mt-1">Track qualified leads, offers made, and price motivated leads with advanced metrics</p>
             </div>
             <div className="flex items-center space-x-4 flex-wrap">
               {/* Time Range Selector */}
@@ -324,13 +612,6 @@ const Dashboard = () => {
                     onChange={(e) => setCustomStartDate(e.target.value)}
                     className="border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <span className="text-gray-500">to</span>
-                  <input
-                    type="date"
-                    value={customEndDate}
-                    onChange={(e) => setCustomEndDate(e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
                 </div>
               )}
 
@@ -351,7 +632,7 @@ const Dashboard = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Summary Cards */}
+        {/* Volume Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-9 gap-6 mb-8">
           {/* Qualified Leads Cards */}
           <div className="bg-white rounded-lg shadow p-6">
@@ -383,7 +664,7 @@ const Dashboard = () => {
             <div className="flex items-center">
               <Clock className="text-purple-600" size={24} />
               <div className="ml-4">
-                <p className="text-sm text-gray-600">Qualified Daily Avg (Business Days)</p>
+                <p className="text-sm text-gray-600">Qualified Daily Avg</p>
                 <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedAvgPerDay}</p>
               </div>
             </div>
@@ -419,7 +700,7 @@ const Dashboard = () => {
             <div className="flex items-center">
               <Clock className="text-indigo-600" size={24} />
               <div className="ml-4">
-                <p className="text-sm text-gray-600">Offers Daily Avg (Business Days)</p>
+                <p className="text-sm text-gray-600">Offers Daily Avg</p>
                 <p className="text-2xl font-bold text-gray-900">{data.summary.offersAvgPerDay}</p>
               </div>
             </div>
@@ -455,8 +736,58 @@ const Dashboard = () => {
             <div className="flex items-center">
               <Clock className="text-teal-600" size={24} />
               <div className="ml-4">
-                <p className="text-sm text-gray-600">Price Motivated Daily Avg (Business Days)</p>
+                <p className="text-sm text-gray-600">Price Motivated Daily Avg</p>
                 <p className="text-2xl font-bold text-gray-900">{data.summary.priceMotivatedAvgPerDay}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Advanced Metrics Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Target className="text-blue-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Qualified → Offer Rate</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedToOfferRate}%</p>
+                <p className="text-xs text-gray-500 mt-1">({data.summary.offersTotal} of {data.summary.qualifiedTotal} qualified)</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Clock className="text-orange-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Avg Time to Offer</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.avgTimeToOffer}</p>
+                <p className="text-xs text-gray-500 mt-1">days from qualified</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Zap className="text-purple-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Pipeline Velocity</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.pipelineVelocity}</p>
+                <p className="text-xs text-gray-500 mt-1">price motivated/day</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Full Funnel Rate */}
+        <div className="grid grid-cols-1 md:grid-cols-1 gap-6 mb-8">
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center justify-center">
+              <Percent className="text-indigo-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Full Funnel Rate</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedToPriceMotivatedRate}%</p>
+                <p className="text-xs text-gray-500 mt-1">qualified → price motivated</p>
               </div>
             </div>
           </div>
@@ -571,6 +902,29 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* Campaign Performance Chart */}
+        <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Qualified Leads by Campaign Code</h3>
+          <ResponsiveContainer width="100%" height={400}>
+            <BarChart data={data.campaignMetrics} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis 
+                dataKey="campaign" 
+                angle={-45}
+                textAnchor="end"
+                height={60}
+                interval={0}
+              />
+              <YAxis />
+              <Tooltip 
+                formatter={(value, name) => [value, name === 'qualified' ? 'Qualified Leads' : name]}
+                labelFormatter={(label) => `Campaign: ${label}`}
+              />
+              <Bar dataKey="qualified" fill="#2563eb" name="Qualified Leads" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
         {/* Recent Activity */}
         <div className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b border-gray-200">
@@ -581,19 +935,34 @@ const Dashboard = () => {
                   Showing {data.filteredActivity.length} activities from selected date range
                 </p>
               </div>
-              <div className="flex items-center space-x-2">
-                <Filter className="text-gray-400" size={20} />
-                <label className="text-sm text-gray-600 font-medium">Filter by New Stage:</label>
-                <select
-                  value={stageFilter}
-                  onChange={(e) => setStageFilter(e.target.value)}
-                  className="border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="all">All New Stages</option>
-                  <option value="ACQ - Qualified">ACQ - Qualified</option>
-                  <option value="ACQ - Offers Made">ACQ - Offers Made</option>
-                  <option value="ACQ - Price Motivated">ACQ - Price Motivated</option>
-                </select>
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <Filter className="text-gray-400" size={20} />
+                  <label className="text-sm text-gray-600 font-medium">Stage:</label>
+                  <select
+                    value={stageFilter}
+                    onChange={(e) => setStageFilter(e.target.value)}
+                    className="border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">All Stages</option>
+                    <option value="ACQ - Qualified">ACQ - Qualified</option>
+                    <option value="ACQ - Offers Made">ACQ - Offers Made</option>
+                    <option value="ACQ - Price Motivated">ACQ - Price Motivated</option>
+                  </select>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <label className="text-sm text-gray-600 font-medium">Campaign:</label>
+                  <select
+                    value={campaignFilter}
+                    onChange={(e) => setCampaignFilter(e.target.value)}
+                    className="border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">All Campaigns</option>
+                    {data.availableCampaigns.map(campaign => (
+                      <option key={campaign} value={campaign}>{campaign}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
           </div>
@@ -609,6 +978,15 @@ const Dashboard = () => {
                     {stageFilter !== 'all' && (
                       <span className="ml-1 text-blue-600">• Filtered</span>
                     )}
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Campaign Code
+                    {campaignFilter !== 'all' && (
+                      <span className="ml-1 text-blue-600">• Filtered</span>
+                    )}
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Lead Source
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Previous Stage
@@ -636,6 +1014,22 @@ const Dashboard = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-800 rounded-full">
+                        {activity.campaign_code}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        activity.lead_source === 'ReadyMode' 
+                          ? 'bg-blue-100 text-blue-800'
+                          : activity.lead_source === 'Roor'
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {activity.lead_source}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
                         {activity.previous_stage}
                       </span>
@@ -649,7 +1043,7 @@ const Dashboard = () => {
             </table>
             {data.filteredActivity.length === 0 && (
               <div className="text-center py-8 text-gray-500">
-                No activity found for the selected stage filter.
+                No activity found for the selected filters.
               </div>
             )}
           </div>
@@ -753,4 +1147,11 @@ const Dashboard = () => {
   );
 };
 
-export default Dashboard;
+export default Dashboard;none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="text-gray-500">to</span>
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    className="border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-

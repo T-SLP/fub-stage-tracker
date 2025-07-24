@@ -31,12 +31,11 @@ def extract_custom_fields(person):
     Returns dict with the custom field values or None if not present
     """
     return {
-        'campaign_id': person.get('customCampaignId'),
+        'campaign_id': person.get('customCampaignID'),  # FIXED: Use correct field name
         'who_pushed_lead': person.get('customWhoPushedTheLead'),
         'parcel_county': person.get('customParcelCounty'),
         'parcel_state': person.get('customParcelState')
     }
-
 
 def extract_lead_source_tag(tags):
     """
@@ -106,7 +105,7 @@ class PerformanceOptimizedFUB:
 
         while True:
             page_count += 1
-            params = {"limit": limit}
+            params = {"limit": limit, "fields": "allFields"}
 
             if next_token:
                 params["next"] = next_token
@@ -419,7 +418,7 @@ class PerformanceOptimizedFUB:
                 self.force_garbage_collection()
 
             # API request with rate limiting
-            params = {"limit": 100}
+            params = {"limit": 100, "fields": "allFields"}
             if next_token:
                 params["next"] = next_token
 
@@ -707,7 +706,6 @@ class PerformanceOptimizedFUB:
                 self.log_performance(f"Unexpected error during insert: {str(e)}")
                 self.save_changes_to_backup_file(all_stage_changes)
                 raise
-
 
 def main():
     # Check if psutil is available
