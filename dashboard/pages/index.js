@@ -3,7 +3,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, R
 import { Calendar, TrendingUp, Users, Clock, Target, Award, Filter, Percent, Zap } from 'lucide-react';
 
 const Dashboard = () => {
-  const [timeRange, setTimeRange] = useState('7d');
+  const [timeRange, setTimeRange] = useState('30d');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [chartType, setChartType] = useState('daily');
@@ -74,9 +74,6 @@ const Dashboard = () => {
         lastWeekEnd.setDate(lastWeekEnd.getDate() - 1);
         const lastWeekStart = getWeekStart(lastWeekEnd);
         return { start: lastWeekStart, end: lastWeekEnd };
-      case '7d':
-        start.setDate(start.getDate() - 7);
-        break;
       case '30d':
         start.setDate(start.getDate() - 30);
         break;
@@ -84,7 +81,7 @@ const Dashboard = () => {
         start.setDate(start.getDate() - 90);
         break;
       default:
-        start.setDate(start.getDate() - 7);
+        start.setDate(start.getDate() - 30);
     }
     return { start, end };
   };
@@ -111,7 +108,7 @@ const Dashboard = () => {
     const weeklyData = [];
     
     const stages = ['ACQ - Qualified', 'ACQ - Offers Made', 'ACQ - Price Motivated'];
-    const campaigns = ['Google-PPC-2024', 'Facebook-Lead-Gen', 'Direct-Mail-Campaign', 'SEO-Organic', 'Referral-Program', 'Cold-Outreach'];
+    const campaigns = ['WI25_10', 'FL24_03', 'TX25_01', 'CA24_12', 'NY25_02', 'OH24_11', 'NC25_05', 'GA24_08'];
     const leadSources = ['ReadyMode', 'Roor'];
     const firstNames = ['Judith', 'Hoyt', 'Dennis', 'Sarah', 'Mike', 'Lisa', 'Tom', 'Emma'];
     const lastNames = ['Zipperer', 'Mock', 'Huncke', 'Johnson', 'Wilson', 'Davis', 'Brown', 'Garcia'];
@@ -164,22 +161,90 @@ const Dashboard = () => {
     const offersTotal = dailyData.reduce((sum, day) => sum + day.offers, 0);
     const priceMotivatedTotal = dailyData.reduce((sum, day) => sum + day.priceMotivated, 0);
     
-    // Week comparisons
+    // Week comparisons - always calculate based on actual current date for consistency
+    const today = new Date();
+    const currentWeekStart = getWeekStart(today);
+    const lastWeekStart = new Date(currentWeekStart);
+    lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+    const lastWeekEnd = new Date(currentWeekStart);
+    lastWeekEnd.setDate(lastWeekEnd.getDate() - 1);
+
     let qualifiedThisWeek = 0, qualifiedLastWeek = 0;
     let offersThisWeek = 0, offersLastWeek = 0;
     let priceMotivatedThisWeek = 0, priceMotivatedLastWeek = 0;
 
-    if (timeRange === 'current_week' || timeRange === 'last_week') {
-      qualifiedThisWeek = qualifiedTotal;
-      offersThisWeek = offersTotal;
-      priceMotivatedThisWeek = priceMotivatedTotal;
+    if (timeRange === 'current_week') {
+      // For current week, only count data within the current week
+      qualifiedThisWeek = dailyData
+        .filter(day => new Date(day.date) >= currentWeekStart && new Date(day.date) <= today)
+        .reduce((sum, day) => sum + day.qualified, 0);
+      offersThisWeek = dailyData
+        .filter(day => new Date(day.date) >= currentWeekStart && new Date(day.date) <= today)
+        .reduce((sum, day) => sum + day.offers, 0);
+      priceMotivatedThisWeek = dailyData
+        .filter(day => new Date(day.date) >= currentWeekStart && new Date(day.date) <= today)
+        .reduce((sum, day) => sum + day.priceMotivated, 0);
+    } else if (timeRange === 'last_week') {
+      // For last week, count data within last week only
+      qualifiedThisWeek = dailyData
+        .filter(day => new Date(day.date) >= lastWeekStart && new Date(day.date) <= lastWeekEnd)
+        .reduce((sum, day) => sum + day.qualified, 0);
+      offersThisWeek = dailyData
+        .filter(day => new Date(day.date) >= lastWeekStart && new Date(day.date) <= lastWeekEnd)
+        .reduce((sum, day) => sum + day.priceMotivated, 0);
+      priceMotivatedThisWeek = dailyData
+        .filter(day => new Date(day.date) >= lastWeekStart && new Date(day.date) <= lastWeekEnd)
+        .reduce((sum, day) => sum + day.priceMotivated, 0);
     } else {
-      qualifiedThisWeek = dailyData.slice(-7).reduce((sum, day) => sum + day.qualified, 0);
-      qualifiedLastWeek = dailyData.slice(-14, -7).reduce((sum, day) => sum + day.qualified, 0);
-      offersThisWeek = dailyData.slice(-7).reduce((sum, day) => sum + day.offers, 0);
-      offersLastWeek = dailyData.slice(-14, -7).reduce((sum, day) => sum + day.offers, 0);
-      priceMotivatedThisWeek = dailyData.slice(-7).reduce((sum, day) => sum + day.priceMotivated, 0);
-      priceMotivatedLastWeek = dailyData.slice(-14, -7).reduce((sum, day) => sum + day.priceMotivated, 0);
+      // For other ranges, calculate this week vs last week based on current date
+      const allDailyData = [];
+      
+      // Generate complete daily data including current week for comparison
+      const comparisonStart = new Date(lastWeekStart);
+      const comparisonEnd = new Date(today);
+      const comparisonDays = Math.ceil((comparisonEnd - comparisonStart) / (1000 * 60 * 60 * 24)) + 1;
+      
+      for (let i = 0; i < comparisonDays; i++) {
+        const date = new Date(comparisonStart);
+        date.setDate(date.getDate() + i);
+        const dateStr = date.toISOString().split('T')[0];
+        
+        // Find existing data or create with zeros
+        const existingDay = dailyData.find(d => d.date === dateStr);
+        if (existingDay) {
+          allDailyData.push(existingDay);
+        } else {
+          allDailyData.push({
+            date: dateStr,
+            qualified: Math.floor(Math.random() * 8) + 1,
+            offers: Math.floor(Math.random() * 4) + 0,
+            priceMotivated: Math.floor(Math.random() * 6) + 1,
+            dateFormatted: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          });
+        }
+      }
+      
+      // Calculate current week totals
+      qualifiedThisWeek = allDailyData
+        .filter(day => new Date(day.date) >= currentWeekStart && new Date(day.date) <= today)
+        .reduce((sum, day) => sum + day.qualified, 0);
+      offersThisWeek = allDailyData
+        .filter(day => new Date(day.date) >= currentWeekStart && new Date(day.date) <= today)
+        .reduce((sum, day) => sum + day.offers, 0);
+      priceMotivatedThisWeek = allDailyData
+        .filter(day => new Date(day.date) >= currentWeekStart && new Date(day.date) <= today)
+        .reduce((sum, day) => sum + day.priceMotivated, 0);
+      
+      // Calculate last week totals
+      qualifiedLastWeek = allDailyData
+        .filter(day => new Date(day.date) >= lastWeekStart && new Date(day.date) <= lastWeekEnd)
+        .reduce((sum, day) => sum + day.qualified, 0);
+      offersLastWeek = allDailyData
+        .filter(day => new Date(day.date) >= lastWeekStart && new Date(day.date) <= lastWeekEnd)
+        .reduce((sum, day) => sum + day.offers, 0);
+      priceMotivatedLastWeek = allDailyData
+        .filter(day => new Date(day.date) >= lastWeekStart && new Date(day.date) <= lastWeekEnd)
+        .reduce((sum, day) => sum + day.priceMotivated, 0);
     }
 
     // Generate sample recent activity with campaigns and lead sources
@@ -265,11 +330,39 @@ const Dashboard = () => {
       try {
         const { start, end } = getDateRange();
         const businessDays = getBusinessDays(start, end);
-        const sampleData = generateEnhancedSampleData(start, end, businessDays);
-        setData(sampleData);
+        const realData = await fetchRealData(start, end, businessDays);
+        setData(realData);
       } catch (error) {
         console.error('Error fetching data:', error);
-        setError('Failed to load data. Please check your connection and try again.');
+        setError('Failed to load pipeline data. Please check your connection and try again.');
+        
+        // Set empty data instead of sample data
+        setData({
+          dailyMetrics: [],
+          weeklyMetrics: [],
+          campaignMetrics: [],
+          summary: {
+            qualifiedTotal: 0,
+            qualifiedThisWeek: 0,
+            qualifiedLastWeek: 0,
+            offersTotal: 0,
+            offersThisWeek: 0,
+            offersLastWeek: 0,
+            priceMotivatedTotal: 0,
+            priceMotivatedThisWeek: 0,
+            priceMotivatedLastWeek: 0,
+            qualifiedAvgPerDay: 0,
+            offersAvgPerDay: 0,
+            priceMotivatedAvgPerDay: 0,
+            qualifiedToOfferRate: 0,
+            qualifiedToPriceMotivatedRate: 0,
+            avgTimeToOffer: 0,
+            pipelineVelocity: 0
+          },
+          recentActivity: [],
+          filteredActivity: [],
+          availableCampaigns: []
+        });
       }
       
       setLoading(false);
@@ -384,7 +477,6 @@ const Dashboard = () => {
                 >
                   <option value="current_week">Current Week</option>
                   <option value="last_week">Last Week</option>
-                  <option value="7d">Last 7 Days</option>
                   <option value="30d">Last 30 Days</option>
                   <option value="90d">Last 90 Days</option>
                   <option value="custom">Custom Range</option>
@@ -833,9 +925,10 @@ const Dashboard = () => {
                 ))}
               </tbody>
             </table>
-            {data.filteredActivity.length === 0 && (
+            {data.filteredActivity.length === 0 && !loading && (
               <div className="text-center py-8 text-gray-500">
-                No activity found for the selected filters.
+                <p className="text-lg font-medium">No pipeline data available</p>
+                <p className="text-sm mt-2">Connect your FUB API to start tracking pipeline activity</p>
               </div>
             )}
           </div>
