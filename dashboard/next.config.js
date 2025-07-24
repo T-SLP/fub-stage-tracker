@@ -2,7 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
-  trailingSlash: true,
+  // trailingSlash: true,  // ← REMOVED - this was causing API redirects
   images: {
     unoptimized: true
   }
