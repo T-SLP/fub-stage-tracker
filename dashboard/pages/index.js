@@ -1,18 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, ResponsiveContainer } from 'recharts';
 import { Calendar, TrendingUp, Users, Clock, Target, Award, Filter, Percent, Zap } from 'lucide-react';
-// import { createClient } from '@supabase/supabase-js';
-
-// TODO: Uncomment and add your Supabase credentials when ready to use real data
-// const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-// const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-// const supabase = createClient(supabaseUrl, supabaseKey);
 
 const Dashboard = () => {
   const [timeRange, setTimeRange] = useState('7d');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
-  const [chartType, setChartType] = useState('daily'); // 'daily' or 'weekly'
+  const [chartType, setChartType] = useState('daily');
   const [visibleLines, setVisibleLines] = useState({
     qualified: true,
     offers: true,
@@ -39,7 +33,6 @@ const Dashboard = () => {
       qualifiedAvgPerDay: 0,
       offersAvgPerDay: 0,
       priceMotivatedAvgPerDay: 0,
-      // New advanced metrics
       qualifiedToOfferRate: 0,
       qualifiedToPriceMotivatedRate: 0,
       avgTimeToOffer: 0,
@@ -103,230 +96,12 @@ const Dashboard = () => {
     for (let i = 0; i < totalDays; i++) {
       const date = new Date(startDate);
       date.setDate(date.getDate() + i);
-      const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
-      if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Exclude Sunday and Saturday
+      const dayOfWeek = date.getDay();
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
         businessDays++;
       }
     }
     return businessDays;
-  };
-
-  // TODO: Replace this with real Supabase data fetching
-  const fetchSupabaseData = async (startDate, endDate, businessDays) => {
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const endDateStr = endDate.toISOString().split('T')[0];
-
-    try {
-      // TODO: Uncomment when ready to use real Supabase data
-      /*
-      const { data: activityData, error: activityError } = await supabase
-        .from('stage_changes')
-        .select(`
-          first_name,
-          last_name,
-          stage_to,
-          campaign_id,
-          lead_source_tag,
-          stage_from,
-          changed_at
-        `)
-        .gte('changed_at', startDateStr)
-        .lte('changed_at', endDateStr + ' 23:59:59')
-        .in('stage_to', ['ACQ - Qualified', 'ACQ - Offers Made', 'ACQ - Price Motivated'])
-        .order('changed_at', { ascending: false });
-
-      if (activityError) throw activityError;
-      return processSupabaseData(activityData || [], startDate, endDate, businessDays);
-      */
-
-      // Mock data for development - remove when using real Supabase
-      return generateEnhancedSampleData(startDate, endDate, businessDays);
-      
-    } catch (error) {
-      console.error('Error fetching Supabase data:', error);
-      throw error;
-    }
-  };
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      
-      try {
-        const { start, end } = getDateRange();
-        const businessDays = getBusinessDays(start, end);
-        const realData = await fetchSupabaseData(start, end, businessDays);
-        setData(realData);
-      } catch (error) {
-        console.error('Error fetching data:', error);
-        setError('Failed to load data. Please check your connection and try again.');
-        // Fallback to sample data
-        const { start, end } = getDateRange();
-        const businessDays = getBusinessDays(start, end);
-        const sampleData = generateEnhancedSampleData(start, end, businessDays);
-        setData(sampleData);
-      }
-      
-      setLoading(false);
-    };
-
-    // Only fetch data if we have both custom dates when custom is selected, or for other time ranges
-    if (timeRange === 'custom') {
-      if (customStartDate && customEndDate) {
-        // Add a small delay to prevent fetching while user is still typing
-        const timeoutId = setTimeout(fetchData, 500);
-        return () => clearTimeout(timeoutId);
-      }
-    } else {
-      fetchData();
-    }
-  }, [timeRange, customStartDate, customEndDate]);
-
-  // Update filtered activity when filters change
-  useEffect(() => {
-    setCurrentPage(1); // Reset to first page when filter changes
-    let filtered = data.recentActivity;
-    
-    if (stageFilter !== 'all') {
-      filtered = filtered.filter(activity => activity.stage === stageFilter);
-    }
-    
-    if (campaignFilter !== 'all') {
-      filtered = filtered.filter(activity => activity.campaign_code === campaignFilter);
-    }
-    
-    setData(prev => ({ ...prev, filteredActivity: filtered }));
-  }, [stageFilter, campaignFilter, data.recentActivity]);
-
-  // Process Supabase data into dashboard format
-  const processSupabaseData = (activityData, startDate, endDate, businessDays) => {
-    // Convert activity data to dashboard format
-    const recentActivity = activityData.map(activity => ({
-      name: `${activity.first_name} ${activity.last_name}`,
-      stage: activity.stage_to,
-      campaign_code: activity.campaign_id || 'No Campaign',
-      lead_source: activity.lead_source_tag || 'Unknown',
-      created_at: activity.changed_at,
-      previous_stage: activity.stage_from || 'Unknown'
-    }));
-
-    // Get unique campaigns for filter dropdown
-    const availableCampaigns = [...new Set(recentActivity
-      .map(a => a.campaign_code)
-      .filter(c => c && c !== 'No Campaign')
-    )].sort();
-
-    if (recentActivity.some(a => a.campaign_code === 'No Campaign')) {
-      availableCampaigns.push('No Campaign');
-    }
-
-    // Calculate daily metrics
-    const dailyMetrics = calculateDailyMetrics(activityData, startDate, endDate);
-    
-    // Generate weekly metrics
-    const weeklyMetrics = generateWeeklyMetrics(dailyMetrics);
-
-    // Calculate campaign metrics
-    const campaignCounts = {};
-    activityData.forEach(activity => {
-      if (activity.stage_to === 'ACQ - Qualified' && activity.campaign_id) {
-        campaignCounts[activity.campaign_id] = (campaignCounts[activity.campaign_id] || 0) + 1;
-      }
-    });
-
-    const campaignMetrics = Object.entries(campaignCounts).map(([campaign, qualified]) => ({
-      campaign,
-      qualified,
-      offers: 0,
-      priceMotivated: 0,
-      leads: 0
-    }));
-
-    // Calculate totals and advanced metrics
-    const qualifiedTotal = dailyMetrics.reduce((sum, day) => sum + day.qualified, 0);
-    const offersTotal = dailyMetrics.reduce((sum, day) => sum + day.offers, 0);
-    const priceMotivatedTotal = dailyMetrics.reduce((sum, day) => sum + day.priceMotivated, 0);
-
-    // Week calculations
-    let qualifiedThisWeek = 0, qualifiedLastWeek = 0;
-    let offersThisWeek = 0, offersLastWeek = 0;
-    let priceMotivatedThisWeek = 0, priceMotivatedLastWeek = 0;
-
-    if (timeRange === 'current_week' || timeRange === 'last_week') {
-      qualifiedThisWeek = qualifiedTotal;
-      offersThisWeek = offersTotal;
-      priceMotivatedThisWeek = priceMotivatedTotal;
-    } else if (dailyMetrics.length >= 14) {
-      qualifiedThisWeek = dailyMetrics.slice(-7).reduce((sum, day) => sum + day.qualified, 0);
-      qualifiedLastWeek = dailyMetrics.slice(-14, -7).reduce((sum, day) => sum + day.qualified, 0);
-      offersThisWeek = dailyMetrics.slice(-7).reduce((sum, day) => sum + day.offers, 0);
-      offersLastWeek = dailyMetrics.slice(-14, -7).reduce((sum, day) => sum + day.offers, 0);
-      priceMotivatedThisWeek = dailyMetrics.slice(-7).reduce((sum, day) => sum + day.priceMotivated, 0);
-      priceMotivatedLastWeek = dailyMetrics.slice(-14, -7).reduce((sum, day) => sum + day.priceMotivated, 0);
-    }
-
-    // Calculate advanced metrics
-    const qualifiedToOfferRate = qualifiedTotal > 0 ? Math.round((offersTotal / qualifiedTotal) * 100) : 0;
-    const qualifiedToPriceMotivatedRate = qualifiedTotal > 0 ? Math.round((priceMotivatedTotal / qualifiedTotal) * 100) : 0;
-    const avgTimeToOffer = Math.round((Math.random() * 5 + 2) * 10) / 10; // TODO: Calculate from real timestamp data
-    const pipelineVelocity = businessDays > 0 ? Math.round((priceMotivatedTotal / businessDays) * 10) / 10 : 0;
-
-    return {
-      dailyMetrics,
-      weeklyMetrics,
-      campaignMetrics,
-      summary: {
-        qualifiedTotal,
-        qualifiedThisWeek,
-        qualifiedLastWeek,
-        offersTotal,
-        offersThisWeek,
-        offersLastWeek,
-        priceMotivatedTotal,
-        priceMotivatedThisWeek,
-        priceMotivatedLastWeek,
-        qualifiedAvgPerDay: businessDays > 0 ? Math.round((qualifiedTotal / businessDays) * 10) / 10 : 0,
-        offersAvgPerDay: businessDays > 0 ? Math.round((offersTotal / businessDays) * 10) / 10 : 0,
-        priceMotivatedAvgPerDay: businessDays > 0 ? Math.round((priceMotivatedTotal / businessDays) * 10) / 10 : 0,
-        qualifiedToOfferRate,
-        qualifiedToPriceMotivatedRate,
-        avgTimeToOffer,
-        pipelineVelocity
-      },
-      recentActivity,
-      filteredActivity: recentActivity,
-      availableCampaigns
-    };
-  };
-
-  // Calculate daily metrics from activity data
-  const calculateDailyMetrics = (activityData, startDate, endDate) => {
-    const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
-    const dailyMetrics = [];
-
-    for (let i = 0; i < totalDays; i++) {
-      const date = new Date(startDate);
-      date.setDate(date.getDate() + i);
-      const dateStr = date.toISOString().split('T')[0];
-      
-      const dayActivities = activityData.filter(activity => 
-        activity.changed_at.split('T')[0] === dateStr
-      );
-
-      dailyMetrics.push({
-        date: dateStr,
-        qualified: dayActivities.filter(a => a.stage_to === 'ACQ - Qualified').length,
-        offers: dayActivities.filter(a => a.stage_to === 'ACQ - Offers Made').length,
-        priceMotivated: dayActivities.filter(a => a.stage_to === 'ACQ - Price Motivated').length,
-        dateFormatted: date.toLocaleDateString('en-US', { 
-          month: 'short', 
-          day: 'numeric' 
-        })
-      });
-    }
-
-    return dailyMetrics;
   };
 
   // Generate enhanced sample data with all new features
@@ -335,10 +110,9 @@ const Dashboard = () => {
     const dailyData = [];
     const weeklyData = [];
     
-    // Your actual data structure
     const stages = ['ACQ - Qualified', 'ACQ - Offers Made', 'ACQ - Price Motivated'];
     const campaigns = ['Google-PPC-2024', 'Facebook-Lead-Gen', 'Direct-Mail-Campaign', 'SEO-Organic', 'Referral-Program', 'Cold-Outreach'];
-    const leadSources = ['ReadyMode', 'Roor']; // Your actual lead sources
+    const leadSources = ['ReadyMode', 'Roor'];
     const firstNames = ['Judith', 'Hoyt', 'Dennis', 'Sarah', 'Mike', 'Lisa', 'Tom', 'Emma'];
     const lastNames = ['Zipperer', 'Mock', 'Huncke', 'Johnson', 'Wilson', 'Davis', 'Brown', 'Garcia'];
     const previousStages = ['Lead', 'ACQ - Not Interested', 'ACQ - Dead / DNC', 'ACQ - Not Ready to Sell'];
@@ -452,7 +226,7 @@ const Dashboard = () => {
     // Calculate advanced metrics
     const qualifiedToOfferRate = qualifiedTotal > 0 ? Math.round((offersTotal / qualifiedTotal) * 100) : 0;
     const qualifiedToPriceMotivatedRate = qualifiedTotal > 0 ? Math.round((priceMotivatedTotal / qualifiedTotal) * 100) : 0;
-    const avgTimeToOffer = Math.round((Math.random() * 5 + 2) * 10) / 10; // 2-7 days average
+    const avgTimeToOffer = Math.round((Math.random() * 5 + 2) * 10) / 10;
     const pipelineVelocity = businessDays > 0 ? Math.round((priceMotivatedTotal / businessDays) * 10) / 10 : 0;
 
     return {
@@ -483,35 +257,49 @@ const Dashboard = () => {
     };
   };
 
-  // Generate weekly metrics from daily data
-  const generateWeeklyMetrics = (dailyData) => {
-    const weeks = new Map();
-    
-    dailyData.forEach(day => {
-      const date = new Date(day.date);
-      const weekStart = getWeekStart(date);
-      const weekKey = weekStart.toISOString().split('T')[0];
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
       
-      if (!weeks.has(weekKey)) {
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekEnd.getDate() + 6);
-        weeks.set(weekKey, {
-          date: weekKey,
-          qualified: 0,
-          offers: 0,
-          priceMotivated: 0,
-          dateFormatted: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-        });
+      try {
+        const { start, end } = getDateRange();
+        const businessDays = getBusinessDays(start, end);
+        const sampleData = generateEnhancedSampleData(start, end, businessDays);
+        setData(sampleData);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        setError('Failed to load data. Please check your connection and try again.');
       }
+      
+      setLoading(false);
+    };
 
-      const weekData = weeks.get(weekKey);
-      weekData.qualified += day.qualified;
-      weekData.offers += day.offers;
-      weekData.priceMotivated += day.priceMotivated;
-    });
+    if (timeRange === 'custom') {
+      if (customStartDate && customEndDate) {
+        const timeoutId = setTimeout(fetchData, 500);
+        return () => clearTimeout(timeoutId);
+      }
+    } else {
+      fetchData();
+    }
+  }, [timeRange, customStartDate, customEndDate]);
 
-    return Array.from(weeks.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
-  };
+  // Update filtered activity when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+    let filtered = data.recentActivity;
+    
+    if (stageFilter !== 'all') {
+      filtered = filtered.filter(activity => activity.stage === stageFilter);
+    }
+    
+    if (campaignFilter !== 'all') {
+      filtered = filtered.filter(activity => activity.campaign_code === campaignFilter);
+    }
+    
+    setData(prev => ({ ...prev, filteredActivity: filtered }));
+  }, [stageFilter, campaignFilter, data.recentActivity]);
 
   const getChangePercentage = (current, previous) => {
     if (previous === 0) return current > 0 ? 100 : 0;
@@ -610,6 +398,13 @@ const Dashboard = () => {
                     type="date"
                     value={customStartDate}
                     onChange={(e) => setCustomStartDate(e.target.value)}
+                    className="border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="text-gray-500">to</span>
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
                     className="border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -744,7 +539,7 @@ const Dashboard = () => {
         </div>
 
         {/* Advanced Metrics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center">
               <Target className="text-blue-600" size={24} />
@@ -752,6 +547,17 @@ const Dashboard = () => {
                 <p className="text-sm text-gray-600">Qualified → Offer Rate</p>
                 <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedToOfferRate}%</p>
                 <p className="text-xs text-gray-500 mt-1">({data.summary.offersTotal} of {data.summary.qualifiedTotal} qualified)</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Percent className="text-indigo-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Full Funnel Rate</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedToPriceMotivatedRate}%</p>
+                <p className="text-xs text-gray-500 mt-1">qualified → price motivated</p>
               </div>
             </div>
           </div>
@@ -774,20 +580,6 @@ const Dashboard = () => {
                 <p className="text-sm text-gray-600">Pipeline Velocity</p>
                 <p className="text-2xl font-bold text-gray-900">{data.summary.pipelineVelocity}</p>
                 <p className="text-xs text-gray-500 mt-1">price motivated/day</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Full Funnel Rate */}
-        <div className="grid grid-cols-1 md:grid-cols-1 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center justify-center">
-              <Percent className="text-indigo-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Full Funnel Rate</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedToPriceMotivatedRate}%</p>
-                <p className="text-xs text-gray-500 mt-1">qualified → price motivated</p>
               </div>
             </div>
           </div>
@@ -1147,11 +939,4 @@ const Dashboard = () => {
   );
 };
 
-export default Dashboard;none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="text-gray-500">to</span>
-                  <input
-                    type="date"
-                    value={customEndDate}
-                    onChange={(e) => setCustomEndDate(e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-
+export default Dashboard;
