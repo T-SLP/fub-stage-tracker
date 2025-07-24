@@ -410,7 +410,6 @@ const Dashboard = () => {
       fetchData();
     }
   }, [timeRange, customStartDate, customEndDate]);
-
   // Update filtered activity when filters change
   useEffect(() => {
     setCurrentPage(1);
@@ -545,6 +544,119 @@ const Dashboard = () => {
                   <option value="daily">Daily View</option>
                   <option value="weekly">Weekly View</option>
                 </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        {/* Volume Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-9 gap-6 mb-8">
+          {/* Qualified Leads Cards */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Users className="text-blue-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Total Qualified</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedTotal}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <TrendingUp className="text-green-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Qualified This Week</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedThisWeek}</p>
+                {timeRange !== 'current_week' && timeRange !== 'last_week' && (
+                  <p className={`text-sm ${qualifiedWeeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {qualifiedWeeklyChange >= 0 ? '+' : ''}{qualifiedWeeklyChange}% vs last week
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Clock className="text-purple-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Qualified Daily Avg</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedAvgPerDay}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Offers Made Cards */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Target className="text-orange-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Total Offers</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.offersTotal}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Award className="text-red-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Offers This Week</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.offersThisWeek}</p>
+                {timeRange !== 'current_week' && timeRange !== 'last_week' && (
+                  <p className={`text-sm ${offersWeeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {offersWeeklyChange >= 0 ? '+' : ''}{offersWeeklyChange}% vs last week
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Clock className="text-indigo-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Offers Daily Avg</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.offersAvgPerDay}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Price Motivated Cards */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <TrendingUp className="text-yellow-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Total Price Motivated</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.priceMotivatedTotal}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Users className="text-pink-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Price Motivated This Week</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.priceMotivatedThisWeek}</p>
+                {timeRange !== 'current_week' && timeRange !== 'last_week' && (
+                  <p className={`text-sm ${priceMotivatedWeeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {priceMotivatedWeeklyChange >= 0 ? '+' : ''}{priceMotivatedWeeklyChange}% vs last week
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center">
+              <Clock className="text-teal-600" size={24} />
+              <div className="ml-4">
+                <p className="text-sm text-gray-600">Price Motivated Daily Avg</p>
+                <p className="text-2xl font-bold text-gray-900">{data.summary.priceMotivatedAvgPerDay}</p>
               </div>
             </div>
           </div>
@@ -953,114 +1065,3 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Volume Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-9 gap-6 mb-8">
-          {/* Qualified Leads Cards */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Users className="text-blue-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Total Qualified</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedTotal}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <TrendingUp className="text-green-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Qualified This Week</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedThisWeek}</p>
-                {timeRange !== 'current_week' && timeRange !== 'last_week' && (
-                  <p className={`text-sm ${qualifiedWeeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {qualifiedWeeklyChange >= 0 ? '+' : ''}{qualifiedWeeklyChange}% vs last week
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Clock className="text-purple-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Qualified Daily Avg</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedAvgPerDay}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Offers Made Cards */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Target className="text-orange-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Total Offers</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.offersTotal}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Award className="text-red-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Offers This Week</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.offersThisWeek}</p>
-                {timeRange !== 'current_week' && timeRange !== 'last_week' && (
-                  <p className={`text-sm ${offersWeeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {offersWeeklyChange >= 0 ? '+' : ''}{offersWeeklyChange}% vs last week
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Clock className="text-indigo-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Offers Daily Avg</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.offersAvgPerDay}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Price Motivated Cards */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <TrendingUp className="text-yellow-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Total Price Motivated</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.priceMotivatedTotal}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Users className="text-pink-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Price Motivated This Week</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.priceMotivatedThisWeek}</p>
-                {timeRange !== 'current_week' && timeRange !== 'last_week' && (
-                  <p className={`text-sm ${priceMotivatedWeeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {priceMotivatedWeeklyChange >= 0 ? '+' : ''}{priceMotivatedWeeklyChange}% vs last week
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Clock className="text-teal-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Price Motivated Daily Avg</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.priceMotivatedAvgPerDay}</p>
-              </div>
-            </div>
