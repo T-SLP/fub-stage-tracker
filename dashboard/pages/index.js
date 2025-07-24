@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Calendar, TrendingUp, Users, Clock, Target, Award, Filter, Percent, Zap } from 'lucide-react';
 
 const Dashboard = () => {
@@ -14,6 +14,12 @@ const Dashboard = () => {
   });
   const [stageFilter, setStageFilter] = useState('all');
   const [campaignFilter, setCampaignFilter] = useState('all');
+  const [campaignTimeRange, setCampaignTimeRange] = useState('30d');
+  const [campaignCustomStartDate, setCampaignCustomStartDate] = useState('');
+  const [campaignCustomEndDate, setCampaignCustomEndDate] = useState('');
+  const [leadSourceTimeRange, setLeadSourceTimeRange] = useState('30d');
+  const [leadSourceCustomStartDate, setLeadSourceCustomStartDate] = useState('');
+  const [leadSourceCustomEndDate, setLeadSourceCustomEndDate] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 25;
   const [data, setData] = useState({
@@ -40,7 +46,9 @@ const Dashboard = () => {
     },
     recentActivity: [],
     filteredActivity: [],
-    availableCampaigns: []
+    availableCampaigns: [],
+    campaignMetrics: [],
+    leadSourceMetrics: []
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -54,18 +62,34 @@ const Dashboard = () => {
   };
 
   // Helper function to get date range
-  const getDateRange = () => {
-    if (customStartDate && customEndDate) {
+  const getDateRange = (timeRangeType = 'main', customStart = '', customEnd = '') => {
+    let selectedTimeRange, selectedCustomStart, selectedCustomEnd;
+    
+    if (timeRangeType === 'campaign') {
+      selectedTimeRange = campaignTimeRange;
+      selectedCustomStart = campaignCustomStartDate;
+      selectedCustomEnd = campaignCustomEndDate;
+    } else if (timeRangeType === 'leadSource') {
+      selectedTimeRange = leadSourceTimeRange;
+      selectedCustomStart = leadSourceCustomStartDate;
+      selectedCustomEnd = leadSourceCustomEndDate;
+    } else {
+      selectedTimeRange = timeRange;
+      selectedCustomStart = customStartDate;
+      selectedCustomEnd = customEndDate;
+    }
+
+    if (selectedCustomStart && selectedCustomEnd) {
       return {
-        start: new Date(customStartDate),
-        end: new Date(customEndDate + 'T23:59:59.999Z')
+        start: new Date(selectedCustomStart),
+        end: new Date(selectedCustomEnd + 'T23:59:59.999Z')
       };
     }
 
     const end = new Date();
     const start = new Date();
 
-    switch (timeRange) {
+    switch (selectedTimeRange) {
       case 'current_week':
         const currentWeekStart = getWeekStart(end);
         return { start: currentWeekStart, end };
@@ -138,7 +162,7 @@ const Dashboard = () => {
   const processSupabaseData = (stageChanges, startDate, endDate, businessDays) => {
     const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
     
-    // Create daily buckets
+    // Create daily buckets (including weekends for charts)
     const dailyData = [];
     for (let i = 0; i < totalDays; i++) {
       const date = new Date(startDate);
@@ -150,7 +174,8 @@ const Dashboard = () => {
         priceMotivated: 0,
         dateFormatted: date.toLocaleDateString('en-US', { 
           month: 'short', 
-          day: 'numeric' 
+          day: 'numeric',
+          weekday: 'short'
         })
       });
     }
@@ -319,14 +344,6 @@ const Dashboard = () => {
       leads: 0
     }));
 
-    // Calculate advanced metrics
-    const qualifiedToOfferRate = qualifiedTotal > 0 ? Math.round((offersTotal / qualifiedTotal) * 100) : 0;
-    const qualifiedToPriceMotivatedRate = qualifiedTotal > 0 ? Math.round((priceMotivatedTotal / qualifiedTotal) * 100) : 0;
-    
-    // Calculate average time to offer (simplified - you could make this more sophisticated)
-    const avgTimeToOffer = Math.round((Math.random() * 5 + 2) * 10) / 10; // Placeholder - replace with real calculation
-    const pipelineVelocity = businessDays > 0 ? Math.round((priceMotivatedTotal / businessDays) * 10) / 10 : 0;
-
     return {
       dailyMetrics: dailyData,
       weeklyMetrics: weeklyData,
@@ -355,6 +372,106 @@ const Dashboard = () => {
     };
   };
 
+  // Fetch campaign data separately
+  const fetchCampaignData = async () => {
+    try {
+      const { start, end } = getDateRange('campaign');
+      const startDateStr = start.toISOString().split('T')[0];
+      const endDateStr = end.toISOString().split('T')[0];
+      
+      const response = await fetch('/api/pipeline-data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          startDate: startDateStr,
+          endDate: endDateStr
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+      
+      const stageChanges = await response.json();
+      
+      // Calculate campaign metrics
+      const campaignCounts = {};
+      stageChanges.forEach(change => {
+        if (change.stage_to === 'ACQ - Qualified') {
+          const campaign = change.campaign_id || 'No Campaign';
+          campaignCounts[campaign] = (campaignCounts[campaign] || 0) + 1;
+        }
+      });
+
+      const campaignMetrics = Object.entries(campaignCounts).map(([campaign, qualified]) => ({
+        campaign,
+        qualified,
+        offers: 0,
+        priceMotivated: 0,
+        leads: 0
+      }));
+
+      setData(prev => ({ ...prev, campaignMetrics }));
+      
+    } catch (error) {
+      console.error('Error fetching campaign data:', error);
+    }
+  };
+
+  // Fetch lead source data separately
+  const fetchLeadSourceData = async () => {
+    try {
+      const { start, end } = getDateRange('leadSource');
+      const startDateStr = start.toISOString().split('T')[0];
+      const endDateStr = end.toISOString().split('T')[0];
+      
+      const response = await fetch('/api/pipeline-data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          startDate: startDateStr,
+          endDate: endDateStr
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+      
+      const stageChanges = await response.json();
+      
+      // Calculate lead source metrics for qualified leads only
+      const leadSourceCounts = {};
+      stageChanges.forEach(change => {
+        if (change.stage_to === 'ACQ - Qualified') {
+          const source = change.lead_source_tag || 'Unknown';
+          leadSourceCounts[source] = (leadSourceCounts[source] || 0) + 1;
+        }
+      });
+
+      const leadSourceMetrics = Object.entries(leadSourceCounts).map(([source, count]) => ({
+        name: source,
+        value: count,
+        percentage: 0 // Will be calculated below
+      }));
+
+      // Calculate percentages
+      const total = leadSourceMetrics.reduce((sum, item) => sum + item.value, 0);
+      leadSourceMetrics.forEach(item => {
+        item.percentage = total > 0 ? Math.round((item.value / total) * 100) : 0;
+      });
+
+      setData(prev => ({ ...prev, leadSourceMetrics }));
+      
+    } catch (error) {
+      console.error('Error fetching lead source data:', error);
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -364,6 +481,18 @@ const Dashboard = () => {
         const { start, end } = getDateRange();
         const businessDays = getBusinessDays(start, end);
         const realData = await fetchRealData(start, end, businessDays);
+        
+        // Calculate advanced metrics that were removed from processSupabaseData
+        const qualifiedToOfferRate = realData.summary.qualifiedTotal > 0 ? Math.round((realData.summary.offersTotal / realData.summary.qualifiedTotal) * 100) : 0;
+        const qualifiedToPriceMotivatedRate = realData.summary.qualifiedTotal > 0 ? Math.round((realData.summary.priceMotivatedTotal / realData.summary.qualifiedTotal) * 100) : 0;
+        const avgTimeToOffer = Math.round((Math.random() * 5 + 2) * 10) / 10; // Placeholder
+        const pipelineVelocity = businessDays > 0 ? Math.round((realData.summary.priceMotivatedTotal / businessDays) * 10) / 10 : 0;
+        
+        realData.summary.qualifiedToOfferRate = qualifiedToOfferRate;
+        realData.summary.qualifiedToPriceMotivatedRate = qualifiedToPriceMotivatedRate;
+        realData.summary.avgTimeToOffer = avgTimeToOffer;
+        realData.summary.pipelineVelocity = pipelineVelocity;
+        
         setData(realData);
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -394,7 +523,8 @@ const Dashboard = () => {
           },
           recentActivity: [],
           filteredActivity: [],
-          availableCampaigns: []
+          availableCampaigns: [],
+          leadSourceMetrics: []
         });
       }
       
@@ -410,6 +540,30 @@ const Dashboard = () => {
       fetchData();
     }
   }, [timeRange, customStartDate, customEndDate]);
+
+  // Separate effect for campaign data
+  useEffect(() => {
+    if (campaignTimeRange === 'custom') {
+      if (campaignCustomStartDate && campaignCustomEndDate) {
+        const timeoutId = setTimeout(fetchCampaignData, 500);
+        return () => clearTimeout(timeoutId);
+      }
+    } else {
+      fetchCampaignData();
+    }
+  }, [campaignTimeRange, campaignCustomStartDate, campaignCustomEndDate]);
+
+  // Separate effect for lead source data
+  useEffect(() => {
+    if (leadSourceTimeRange === 'custom') {
+      if (leadSourceCustomStartDate && leadSourceCustomEndDate) {
+        const timeoutId = setTimeout(fetchLeadSourceData, 500);
+        return () => clearTimeout(timeoutId);
+      }
+    } else {
+      fetchLeadSourceData();
+    }
+  }, [leadSourceTimeRange, leadSourceCustomStartDate, leadSourceCustomEndDate]);
   // Update filtered activity when filters change
   useEffect(() => {
     setCurrentPage(1);
@@ -431,10 +585,6 @@ const Dashboard = () => {
     return Math.round(((current - previous) / previous) * 100);
   };
 
-  const qualifiedWeeklyChange = getChangePercentage(data.summary.qualifiedThisWeek, data.summary.qualifiedLastWeek);
-  const offersWeeklyChange = getChangePercentage(data.summary.offersThisWeek, data.summary.offersLastWeek);
-  const priceMotivatedWeeklyChange = getChangePercentage(data.summary.priceMotivatedThisWeek, data.summary.priceMotivatedLastWeek);
-
   const handleLineToggle = (lineKey) => {
     setVisibleLines(prev => ({
       ...prev,
@@ -443,6 +593,9 @@ const Dashboard = () => {
   };
 
   const chartData = chartType === 'weekly' ? data.weeklyMetrics : data.dailyMetrics;
+
+  // Colors for pie chart
+  const PIE_COLORS = ['#2563eb', '#16a34a', '#dc2626', '#ca8a04', '#9333ea', '#c2410c'];
 
   // Pagination calculations
   const totalPages = Math.ceil(data.filteredActivity.length / itemsPerPage);
@@ -552,7 +705,7 @@ const Dashboard = () => {
 
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Volume Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-9 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-8">
           {/* Qualified Leads Cards */}
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center">
@@ -560,21 +713,6 @@ const Dashboard = () => {
               <div className="ml-4">
                 <p className="text-sm text-gray-600">Total Qualified</p>
                 <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedTotal}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <TrendingUp className="text-green-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Qualified This Week</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedThisWeek}</p>
-                {timeRange !== 'current_week' && timeRange !== 'last_week' && (
-                  <p className={`text-sm ${qualifiedWeeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {qualifiedWeeklyChange >= 0 ? '+' : ''}{qualifiedWeeklyChange}% vs last week
-                  </p>
-                )}
               </div>
             </div>
           </div>
@@ -602,21 +740,6 @@ const Dashboard = () => {
           
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center">
-              <Award className="text-red-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Offers This Week</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.offersThisWeek}</p>
-                {timeRange !== 'current_week' && timeRange !== 'last_week' && (
-                  <p className={`text-sm ${offersWeeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {offersWeeklyChange >= 0 ? '+' : ''}{offersWeeklyChange}% vs last week
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
               <Clock className="text-indigo-600" size={24} />
               <div className="ml-4">
                 <p className="text-sm text-gray-600">Offers Daily Avg</p>
@@ -638,21 +761,6 @@ const Dashboard = () => {
           
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center">
-              <Users className="text-pink-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Price Motivated This Week</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.priceMotivatedThisWeek}</p>
-                {timeRange !== 'current_week' && timeRange !== 'last_week' && (
-                  <p className={`text-sm ${priceMotivatedWeeklyChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {priceMotivatedWeeklyChange >= 0 ? '+' : ''}{priceMotivatedWeeklyChange}% vs last week
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
               <Clock className="text-teal-600" size={24} />
               <div className="ml-4">
                 <p className="text-sm text-gray-600">Price Motivated Daily Avg</p>
@@ -663,7 +771,7 @@ const Dashboard = () => {
         </div>
 
         {/* Advanced Metrics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center">
               <Target className="text-blue-600" size={24} />
@@ -671,17 +779,6 @@ const Dashboard = () => {
                 <p className="text-sm text-gray-600">Qualified → Offer Rate</p>
                 <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedToOfferRate}%</p>
                 <p className="text-xs text-gray-500 mt-1">({data.summary.offersTotal} of {data.summary.qualifiedTotal} qualified)</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Percent className="text-indigo-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Full Funnel Rate</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedToPriceMotivatedRate}%</p>
-                <p className="text-xs text-gray-500 mt-1">qualified → price motivated</p>
               </div>
             </div>
           </div>
@@ -820,7 +917,48 @@ const Dashboard = () => {
 
         {/* Campaign Performance Chart */}
         <div className="bg-white rounded-lg shadow p-6 mb-8">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Qualified Leads by Campaign Code</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Qualified Leads by Campaign Code</h3>
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <Calendar className="text-gray-400" size={16} />
+                <select 
+                  value={campaignTimeRange} 
+                  onChange={(e) => {
+                    setCampaignTimeRange(e.target.value);
+                    if (e.target.value !== 'custom') {
+                      setCampaignCustomStartDate('');
+                      setCampaignCustomEndDate('');
+                    }
+                  }}
+                  className="border border-gray-300 rounded-md px-3 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                >
+                  <option value="current_week">Current Week</option>
+                  <option value="last_week">Last Week</option>
+                  <option value="30d">Last 30 Days</option>
+                  <option value="90d">Last 90 Days</option>
+                  <option value="custom">Custom Range</option>
+                </select>
+              </div>
+              {campaignTimeRange === 'custom' && (
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="date"
+                    value={campaignCustomStartDate}
+                    onChange={(e) => setCampaignCustomStartDate(e.target.value)}
+                    className="border border-gray-300 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                  <span className="text-gray-500 text-sm">to</span>
+                  <input
+                    type="date"
+                    value={campaignCustomEndDate}
+                    onChange={(e) => setCampaignCustomEndDate(e.target.value)}
+                    className="border border-gray-300 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
           <ResponsiveContainer width="100%" height={400}>
             <BarChart data={data.campaignMetrics} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -839,6 +977,106 @@ const Dashboard = () => {
               <Bar dataKey="qualified" fill="#2563eb" name="Qualified Leads" />
             </BarChart>
           </ResponsiveContainer>
+        </div>
+
+        {/* Lead Source Pie Chart */}
+        <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Qualified Leads by Lead Source</h3>
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <Calendar className="text-gray-400" size={16} />
+                <select 
+                  value={leadSourceTimeRange} 
+                  onChange={(e) => {
+                    setLeadSourceTimeRange(e.target.value);
+                    if (e.target.value !== 'custom') {
+                      setLeadSourceCustomStartDate('');
+                      setLeadSourceCustomEndDate('');
+                    }
+                  }}
+                  className="border border-gray-300 rounded-md px-3 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                >
+                  <option value="current_week">Current Week</option>
+                  <option value="last_week">Last Week</option>
+                  <option value="30d">Last 30 Days</option>
+                  <option value="90d">Last 90 Days</option>
+                  <option value="custom">Custom Range</option>
+                </select>
+              </div>
+              {leadSourceTimeRange === 'custom' && (
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="date"
+                    value={leadSourceCustomStartDate}
+                    onChange={(e) => setLeadSourceCustomStartDate(e.target.value)}
+                    className="border border-gray-300 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                  <span className="text-gray-500 text-sm">to</span>
+                  <input
+                    type="date"
+                    value={leadSourceCustomEndDate}
+                    onChange={(e) => setLeadSourceCustomEndDate(e.target.value)}
+                    className="border border-gray-300 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <ResponsiveContainer width="100%" height={350}>
+              <PieChart>
+                <Pie
+                  data={data.leadSourceMetrics}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percentage, value }) => `${name}: ${value} (${percentage}%)`}
+                  outerRadius={120}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {data.leadSourceMetrics.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value, name) => [value, 'Qualified Leads']} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="flex flex-col justify-center">
+              <h4 className="text-md font-semibold text-gray-800 mb-4">Lead Source Breakdown</h4>
+              <div className="space-y-3">
+                {data.leadSourceMetrics.map((source, index) => (
+                  <div key={source.name} className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <div 
+                        className="w-4 h-4 rounded-full mr-3"
+                        style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}
+                      ></div>
+                      <span className="text-sm font-medium text-gray-700">{source.name}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-bold text-gray-900">{source.value}</div>
+                      <div className="text-xs text-gray-500">{source.percentage}%</div>
+                    </div>
+                  </div>
+                ))}
+                {data.leadSourceMetrics.length === 0 && (
+                  <div className="text-center py-4 text-gray-500">
+                    <p className="text-sm">No qualified leads found for the selected time period</p>
+                  </div>
+                )}
+              </div>
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-700">Total Qualified Leads:</span>
+                  <span className="text-lg font-bold text-gray-900">
+                    {data.leadSourceMetrics.reduce((sum, source) => sum + source.value, 0)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Recent Activity */}
