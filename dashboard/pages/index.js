@@ -1032,7 +1032,7 @@ const Dashboard = () => {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {data.leadSourceMetrics.map((entry, index) => (
+                  {(data.leadSourceMetrics || []).map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                   ))}
                 </Pie>
@@ -1042,7 +1042,7 @@ const Dashboard = () => {
             <div className="flex flex-col justify-center">
               <h4 className="text-md font-semibold text-gray-800 mb-4">Lead Source Breakdown</h4>
               <div className="space-y-3">
-                {data.leadSourceMetrics.map((source, index) => (
+                {(data.leadSourceMetrics || []).map((source, index) => (
                   <div key={source.name} className="flex items-center justify-between">
                     <div className="flex items-center">
                       <div 
@@ -1057,7 +1057,7 @@ const Dashboard = () => {
                     </div>
                   </div>
                 ))}
-                {data.leadSourceMetrics.length === 0 && (
+                {(data.leadSourceMetrics || []).length === 0 && (
                   <div className="text-center py-4 text-gray-500">
                     <p className="text-sm">No qualified leads found for the selected time period</p>
                   </div>
@@ -1067,7 +1067,7 @@ const Dashboard = () => {
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-medium text-gray-700">Total Qualified Leads:</span>
                   <span className="text-lg font-bold text-gray-900">
-                    {data.leadSourceMetrics.reduce((sum, source) => sum + source.value, 0)}
+                    {(data.leadSourceMetrics || []).reduce((sum, source) => sum + source.value, 0)}
                   </span>
                 </div>
               </div>
@@ -1147,7 +1147,7 @@ const Dashboard = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {currentPageData.map((activity, index) => (
+                {(currentPageData || []).map((activity, index) => (
                   <tr key={startIndex + index} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">{activity.name}</div>
