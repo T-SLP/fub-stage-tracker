@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Calendar, TrendingUp, Users, Clock, Target, Award, Filter, Percent, Zap } from 'lucide-react';
+import { Calendar, TrendingUp, Users, Clock, Target, Award, Filter, Zap } from 'lucide-react';
 
 const Dashboard = () => {
   const [timeRange, setTimeRange] = useState('30d');
