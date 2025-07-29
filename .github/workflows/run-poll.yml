@@ -1,12 +1,30 @@
-name: Run Stage Polling Twice Daily
+name: Run Enhanced Stage Polling with Events API
 on:
   schedule:
-    - cron: "0 7,19 * * *"  # Runs at 3 AM and 3 PM ET (fixed missing *)
+    # Convert ET to UTC: ET = UTC-5 (standard) or UTC-4 (daylight)
+    # Using UTC-5 for consistency (standard time)
+    # 7:00 AM ET = 12:00 PM UTC
+    # 12:30 PM ET = 5:30 PM UTC  
+    # 6:30 PM ET = 11:30 PM UTC
+    - cron: "0 12 * * *"    # 7:00 AM ET
+    - cron: "30 17 * * *"   # 12:30 PM ET
+    - cron: "30 23 * * *"   # 6:30 PM ET
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Tracker mode (1=Enhanced with Events API, 2=Memory-Capped, 3=Ultimate)'
+        required: false
+        default: '1'
+        type: choice
+        options:
+        - '1'
+        - '2'
+        - '3'
+
 jobs:
   run-script:
     runs-on: ubuntu-latest
-    timeout-minutes: 90  # Extended timeout for large datasets
+    timeout-minutes: 90  # Keep your proven timeout
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -14,7 +32,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.11'  # Keep your Python version
       
       - name: Install dependencies
         run: |
@@ -25,19 +43,101 @@ jobs:
         run: |
           echo "Available memory: $(python -c 'import psutil; print(f"{psutil.virtual_memory().available / (1024**3):.1f} GB")')"
           echo "CPU cores: $(python -c 'import psutil; print(psutil.cpu_count())')"
+          echo "Current time: $(date)"
       
-      - name: Run script
+      - name: Run Enhanced FUB Stage Tracker
         env:
           FUB_API_KEY: ${{ secrets.FUB_API_KEY }}
           FUB_SYSTEM_KEY: ${{ secrets.FUB_SYSTEM_KEY }}
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          echo "🚀 Starting optimized FUB Stage Tracker..."
-          echo "Using Memory-Capped mode (2GB limit) for GitHub Actions"
-          echo "2" | python fub_stage_tracker.py
+          echo "🚀 Starting Enhanced FUB Stage Tracker..."
+          echo "🔥 NEW: Now captures rapid stage transitions via Events API!"
+          echo "   • Catches 30-second stage changes that polling misses"
+          echo "   • Complete audit trail of all pipeline activity"
+          echo "   • Never miss Qualified→Offers Made→Rejected sequences"
+          echo "📅 Running 3x daily: 7:00 AM, 12:30 PM, 6:30 PM ET"
+          echo ""
+          
+          # Determine mode: manual input, or default to Enhanced for scheduled runs
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ github.event.inputs.mode }}"
+            echo "🎯 Manual run - using selected mode: $MODE"
+          else
+            MODE="1"
+            echo "⏰ Scheduled run - using Enhanced mode (1) with Events API"
+            echo "   Running 3x daily for maximum stage change coverage"
+          fi
+          
+          echo "📡 Mode $MODE selected:"
+          case $MODE in
+            "1") echo "   Enhanced (Events API + Polling) - Captures ALL stage transitions" ;;
+            "2") echo "   Memory-Capped (2GB limit) - Traditional polling only" ;;
+            "3") echo "   Ultimate (fastest) - Traditional polling, high memory" ;;
+          esac
+          echo ""
+          
+          echo "$MODE" | python fub_stage_tracker.py
       
-      - name: Check completion status
+      - name: Check for rapid transitions detected
         if: always()
         run: |
-          echo "📊 Script execution completed"
+          echo "🔍 Checking for rapid transition detection..."
+          
+          # Look for rapid transition indicators in recent logs
+          if grep -q "⚡ RAPID TRANSITIONS CAPTURED" /tmp/tracker.log 2>/dev/null; then
+            echo "✅ Rapid transitions were detected and captured!"
+            grep -A 10 "⚡ RAPID TRANSITIONS CAPTURED" /tmp/tracker.log 2>/dev/null || true
+          elif grep -q "Rapid transitions detected:" <<< "$GITHUB_STEP_SUMMARY" 2>/dev/null; then
+            echo "✅ Events API found rapid transitions!"
+          else
+            echo "ℹ️  No rapid transitions detected in this run (normal if no quick stage changes occurred)"
+          fi
+      
+      - name: Upload backup files if created
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: stage-changes-backup-${{ github.run_number }}
+          path: stage_changes_backup_*.json
+          retention-days: 7
+          if-no-files-found: ignore
+      
+      - name: Check completion status and performance
+        if: always()
+        run: |
+          echo "📊 Enhanced Script Execution Summary"
+          echo "=================================="
+          echo "Completion time: $(date)"
           echo "Final memory usage: $(python -c 'import psutil; print(f"{psutil.virtual_memory().percent}%")')"
+          echo "Peak memory reached: $(python -c 'import psutil; print(f"{psutil.virtual_memory().used / (1024**3):.1f} GB")')"
+          
+          # Check if we have database connectivity
+          python -c "
+          import os
+          import psycopg2
+          try:
+              conn = psycopg2.connect(os.getenv('SUPABASE_DB_URL'), sslmode='require')
+              with conn.cursor() as cur:
+                  cur.execute('SELECT COUNT(*) FROM stage_changes WHERE source = %s AND received_at > NOW() - INTERVAL %s', ('events_api', '1 day'))
+                  events_count = cur.fetchone()[0]
+                  cur.execute('SELECT COUNT(*) FROM stage_changes WHERE source = %s AND received_at > NOW() - INTERVAL %s', ('polling', '1 day'))
+                  polling_count = cur.fetchone()[0]
+              conn.close()
+              print(f'📈 Recent activity (last 24h):')
+              print(f'   Events API records: {events_count:,}')
+              print(f'   Polling records: {polling_count:,}') 
+              print(f'   Total enhanced records: {events_count + polling_count:,}')
+              if events_count > 0:
+                  print('✅ Events API integration working!')
+              else:
+                  print('ℹ️  No Events API records (normal if no stage changes occurred)')
+          except Exception as e:
+              print(f'ℹ️  Could not check database stats: {e}')
+          " 2>/dev/null || echo "ℹ️  Database connectivity check skipped"
+          
+          echo ""
+          echo "🎯 Next Steps:"
+          echo "   • Check your dashboard for more accurate pipeline metrics"
+          echo "   • Look for previously missed rapid stage transitions"
+          echo "   • Monitor improved conversion rate accuracy"
