@@ -96,7 +96,7 @@ jobs:
       
       - name: Upload backup files if created
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: stage-changes-backup-${{ github.run_number }}
           path: stage_changes_backup_*.json
