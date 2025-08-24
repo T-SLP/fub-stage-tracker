@@ -735,29 +735,31 @@ const Dashboard = () => {
         </div>
 
         {/* Advanced Metrics Cards */}
-        <MetricCard
-          icon={Target}
-          iconColor="text-blue-600"
-          title="Qualified → Offer Rate"
-          value={`${data.summary.qualifiedToOfferRate}%`}
-          subtitle={`(${data.summary.offersTotal} of ${data.summary.qualifiedTotal} qualified)`}
-        />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <MetricCard
+            icon={Target}
+            iconColor="text-blue-600"
+            title="Qualified → Offer Rate"
+            value={`${data.summary.qualifiedToOfferRate}%`}
+            subtitle={`(${data.summary.offersTotal} of ${data.summary.qualifiedTotal} qualified)`}
+          />
 
-        <MetricCard
-          icon={Clock}
-          iconColor="text-orange-600"
-          title="Avg Time to Offer"
-          value={data.summary.avgTimeToOffer}
-          subtitle="days from qualified"
-        />
+          <MetricCard
+            icon={Clock}
+            iconColor="text-orange-600"
+            title="Avg Time to Offer"
+            value={data.summary.avgTimeToOffer}
+            subtitle="days from qualified"
+          />
 
-        <MetricCard
-          icon={Zap}
-          iconColor="text-purple-600"
-          title="Pipeline Velocity"
-          value={data.summary.pipelineVelocity}
-          subtitle="avg days qualified → contract"
-        />
+          <MetricCard
+            icon={Zap}
+            iconColor="text-purple-600"
+            title="Pipeline Velocity"
+            value={data.summary.pipelineVelocity}
+            subtitle="avg days qualified → contract"
+          />
+        </div>
 
         {/* Chart Controls */}
         <div className="bg-white rounded-lg shadow p-6 mb-6">
