@@ -9,7 +9,7 @@ import ErrorMessage from '../components/common/ErrorMessage';
 import MetricCard from '../components/Cards/MetricCard';
 
 const Dashboard = () => {
-  const [timeRange, setTimeRange] = useState('30d');
+  const [timeRange, setTimeRange] = useState(TIME_RANGES.CURRENT_WEEK);
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [chartType, setChartType] = useState('daily');
@@ -20,10 +20,10 @@ const Dashboard = () => {
   });
   const [stageFilter, setStageFilter] = useState('all');
   const [campaignFilter, setCampaignFilter] = useState('all');
-  const [campaignTimeRange, setCampaignTimeRange] = useState('30d');
+  const [campaignTimeRange, setCampaignTimeRange] = useState(TIME_RANGES.CURRENT_WEEK);
   const [campaignCustomStartDate, setCampaignCustomStartDate] = useState('');
   const [campaignCustomEndDate, setCampaignCustomEndDate] = useState('');
-  const [leadSourceTimeRange, setLeadSourceTimeRange] = useState('30d');
+  const [leadSourceTimeRange, setLeadSourceTimeRange] = useState(TIME_RANGES.CURRENT_WEEK);
   const [leadSourceCustomStartDate, setLeadSourceCustomStartDate] = useState('');
   const [leadSourceCustomEndDate, setLeadSourceCustomEndDate] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
