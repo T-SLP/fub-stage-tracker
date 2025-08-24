@@ -689,15 +689,12 @@ const Dashboard = () => {
         {/* Volume Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-8">
           {/* Qualified Leads Cards */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Users className="text-blue-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Total Qualified</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedTotal}</p>
-              </div>
-            </div>
-          </div>
+          <MetricCard
+            icon={Users}
+            iconColor="text-blue-600"
+            title="Total Qualified"
+            value={data.summary.qualifiedTotal}
+          />
           
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center">
