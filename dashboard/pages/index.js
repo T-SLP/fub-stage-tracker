@@ -12,6 +12,8 @@ import TimeRangeSelector from '../components/Header/TimeRangeSelector';
 import DashboardHeader from '../components/Header/DashboardHeader';
 import CombinedTrendChart from '../components/Charts/CombinedTrendChart';
 import VolumeComparisonChart from '../components/Charts/VolumeComparisonChart';
+import CampaignPerformanceChart from '../components/Charts/CampaignPerformanceChart';
+import LeadSourceChart from '../components/Charts/LeadSourceChart';
 
 const Dashboard = () => {
   const [timeRange, setTimeRange] = useState(TIME_RANGES.CURRENT_WEEK);
@@ -774,169 +776,25 @@ const Dashboard = () => {
           />
         </div>
 
-        {/* Campaign Performance Chart */}
-        <div className="bg-white rounded-lg shadow p-6 mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Qualified Leads by Campaign Code</h3>
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <Calendar className="text-gray-400" size={16} />
-                <select 
-                  value={campaignTimeRange} 
-                  onChange={(e) => {
-                    setCampaignTimeRange(e.target.value);
-                    if (e.target.value !== 'custom') {
-                      setCampaignCustomStartDate('');
-                      setCampaignCustomEndDate('');
-                    }
-                  }}
-                  className="border border-gray-300 rounded-md px-3 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                >
-                  <option value="current_week">Current Week</option>
-                  <option value="last_week">Last Week</option>
-                  <option value="30d">Last 30 Days</option>
-                  <option value="90d">Last 90 Days</option>
-                  <option value="custom">Custom Range</option>
-                </select>
-              </div>
-              {campaignTimeRange === 'custom' && (
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="date"
-                    value={campaignCustomStartDate}
-                    onChange={(e) => setCampaignCustomStartDate(e.target.value)}
-                    className="border border-gray-300 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                  <span className="text-gray-500 text-sm">to</span>
-                  <input
-                    type="date"
-                    value={campaignCustomEndDate}
-                    onChange={(e) => setCampaignCustomEndDate(e.target.value)}
-                    className="border border-gray-300 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-          <ResponsiveContainer width="100%" height={400}>
-            <BarChart data={data.campaignMetrics} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis 
-                dataKey="campaign" 
-                angle={-45}
-                textAnchor="end"
-                height={60}
-                interval={0}
-              />
-              <YAxis />
-              <Tooltip 
-                formatter={(value, name) => [value, name === 'qualified' ? 'Qualified Leads' : name]}
-                labelFormatter={(label) => `Campaign: ${label}`}
-              />
-              <Bar dataKey="qualified" fill="#2563eb" name="Qualified Leads" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <CampaignPerformanceChart
+          data={data.campaignMetrics}
+          campaignTimeRange={campaignTimeRange}
+          campaignCustomStartDate={campaignCustomStartDate}
+          campaignCustomEndDate={campaignCustomEndDate}
+          onCampaignTimeRangeChange={setCampaignTimeRange}
+          onCampaignCustomStartDateChange={setCampaignCustomStartDate}
+          onCampaignCustomEndDateChange={setCampaignCustomEndDate}
+        />
 
-        {/* Lead Source Pie Chart */}
-        <div className="bg-white rounded-lg shadow p-6 mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Qualified Leads by Lead Source</h3>
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <Calendar className="text-gray-400" size={16} />
-                <select 
-                  value={leadSourceTimeRange} 
-                  onChange={(e) => {
-                    setLeadSourceTimeRange(e.target.value);
-                    if (e.target.value !== 'custom') {
-                      setLeadSourceCustomStartDate('');
-                      setLeadSourceCustomEndDate('');
-                    }
-                  }}
-                  className="border border-gray-300 rounded-md px-3 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                >
-                  <option value="current_week">Current Week</option>
-                  <option value="last_week">Last Week</option>
-                  <option value="30d">Last 30 Days</option>
-                  <option value="90d">Last 90 Days</option>
-                  <option value="custom">Custom Range</option>
-                </select>
-              </div>
-              {leadSourceTimeRange === 'custom' && (
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="date"
-                    value={leadSourceCustomStartDate}
-                    onChange={(e) => setLeadSourceCustomStartDate(e.target.value)}
-                    className="border border-gray-300 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                  <span className="text-gray-500 text-sm">to</span>
-                  <input
-                    type="date"
-                    value={leadSourceCustomEndDate}
-                    onChange={(e) => setLeadSourceCustomEndDate(e.target.value)}
-                    className="border border-gray-300 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <ResponsiveContainer width="100%" height={350}>
-              <PieChart>
-                <Pie
-                  data={data.leadSourceMetrics}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percentage, value }) => `${name}: ${value} (${percentage}%)`}
-                  outerRadius={120}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {(data.leadSourceMetrics || []).map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value, name) => [value, 'Qualified Leads']} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="flex flex-col justify-center">
-              <h4 className="text-md font-semibold text-gray-800 mb-4">Lead Source Breakdown</h4>
-              <div className="space-y-3">
-                {(data.leadSourceMetrics || []).map((source, index) => (
-                  <div key={source.name} className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div 
-                        className="w-4 h-4 rounded-full mr-3"
-                        style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}
-                      ></div>
-                      <span className="text-sm font-medium text-gray-700">{source.name}</span>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-bold text-gray-900">{source.value}</div>
-                      <div className="text-xs text-gray-500">{source.percentage}%</div>
-                    </div>
-                  </div>
-                ))}
-                {(data.leadSourceMetrics || []).length === 0 && (
-                  <div className="text-center py-4 text-gray-500">
-                    <p className="text-sm">No qualified leads found for the selected time period</p>
-                  </div>
-                )}
-              </div>
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-gray-700">Total Qualified Leads:</span>
-                  <span className="text-lg font-bold text-gray-900">
-                    {(data.leadSourceMetrics || []).reduce((sum, source) => sum + source.value, 0)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <LeadSourceChart
+          data={data.leadSourceMetrics}
+          leadSourceTimeRange={leadSourceTimeRange}
+          leadSourceCustomStartDate={leadSourceCustomStartDate}
+          leadSourceCustomEndDate={leadSourceCustomEndDate}
+          onLeadSourceTimeRangeChange={setLeadSourceTimeRange}
+          onLeadSourceCustomStartDateChange={setLeadSourceCustomStartDate}
+          onLeadSourceCustomEndDateChange={setLeadSourceCustomEndDate}
+        />
 
         {/* Recent Activity */}
         <div className="bg-white rounded-lg shadow">
