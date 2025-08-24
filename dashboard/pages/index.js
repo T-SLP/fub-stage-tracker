@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Calendar, TrendingUp, Users, Clock, Target, Award, Filter, Zap } from 'lucide-react';
+// ADD THESE NEW IMPORTS (don't change any existing imports)
+import { TIME_RANGES, CHART_TYPES, STAGES, PIE_COLORS } from '../utils/constants';
+import { getWeekStart as getWeekStartHelper, getDateRange as getDateRangeHelper, getBusinessDays, isDateInRange } from '../utils/dateHelpers';
+import LoadingSpinner from '../components/common/LoadingSpinner';
+import ErrorMessage from '../components/common/ErrorMessage';
+import MetricCard from '../components/Cards/MetricCard';
 
 const Dashboard = () => {
   const [timeRange, setTimeRange] = useState('30d');
