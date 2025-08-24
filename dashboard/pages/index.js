@@ -10,6 +10,8 @@ import MetricCard from '../components/Cards/MetricCard';
 import ChartTypeToggle from '../components/Header/ChartTypeToggle';
 import TimeRangeSelector from '../components/Header/TimeRangeSelector';
 import DashboardHeader from '../components/Header/DashboardHeader';
+import CombinedTrendChart from '../components/Charts/CombinedTrendChart';
+import VolumeComparisonChart from '../components/Charts/VolumeComparisonChart';
 
 const Dashboard = () => {
   const [timeRange, setTimeRange] = useState(TIME_RANGES.CURRENT_WEEK);
@@ -759,68 +761,17 @@ const Dashboard = () => {
 
         {/* Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Combined Trend Line Chart */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              {chartType === CHART_TYPES.WEEKLY ? 'Weekly' : 'Daily'} Pipeline Activity
-            </h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="dateFormatted" />
-                <YAxis />
-                <Tooltip />
-                {visibleLines.qualified && (
-                  <Line 
-                    type="monotone" 
-                    dataKey="qualified" 
-                    stroke="#2563eb" 
-                    strokeWidth={2}
-                    name="Qualified Leads"
-                    dot={{ fill: '#2563eb', strokeWidth: 2 }}
-                  />
-                )}
-                {visibleLines.offers && (
-                  <Line 
-                    type="monotone" 
-                    dataKey="offers" 
-                    stroke="#ea580c" 
-                    strokeWidth={2}
-                    name="Offers Made"
-                    dot={{ fill: '#ea580c', strokeWidth: 2 }}
-                  />
-                )}
-                {visibleLines.priceMotivated && (
-                  <Line 
-                    type="monotone" 
-                    dataKey="priceMotivated" 
-                    stroke="#eab308" 
-                    strokeWidth={2}
-                    name="Price Motivated"
-                    dot={{ fill: '#eab308', strokeWidth: 2 }}
-                  />
-                )}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <CombinedTrendChart
+            data={chartData}
+            visibleLines={visibleLines}
+            chartType={chartType}
+          />
 
-          {/* Bar Chart Comparison */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              {chartType === CHART_TYPES.WEEKLY ? 'Weekly' : 'Daily'} Volume Comparison
-            </h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="dateFormatted" />
-                <YAxis />
-                <Tooltip />
-                {visibleLines.qualified && <Bar dataKey="qualified" fill="#2563eb" name="Qualified" />}
-                {visibleLines.offers && <Bar dataKey="offers" fill="#ea580c" name="Offers" />}
-                {visibleLines.priceMotivated && <Bar dataKey="priceMotivated" fill="#eab308" name="Price Motivated" />}
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <VolumeComparisonChart
+            data={chartData}
+            visibleLines={visibleLines}
+            chartType={chartType}
+          />
         </div>
 
         {/* Campaign Performance Chart */}
