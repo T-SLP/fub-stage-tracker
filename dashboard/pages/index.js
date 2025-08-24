@@ -735,40 +735,29 @@ const Dashboard = () => {
         </div>
 
         {/* Advanced Metrics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Target className="text-blue-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Qualified → Offer Rate</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedToOfferRate}%</p>
-                <p className="text-xs text-gray-500 mt-1">({data.summary.offersTotal} of {data.summary.qualifiedTotal} qualified)</p>
-              </div>
-            </div>
-          </div>
+        <MetricCard
+          icon={Target}
+          iconColor="text-blue-600"
+          title="Qualified → Offer Rate"
+          value={`${data.summary.qualifiedToOfferRate}%`}
+          subtitle={`(${data.summary.offersTotal} of ${data.summary.qualifiedTotal} qualified)`}
+        />
 
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Clock className="text-orange-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Avg Time to Offer</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.avgTimeToOffer}</p>
-                <p className="text-xs text-gray-500 mt-1">days from qualified</p>
-              </div>
-            </div>
-          </div>
+        <MetricCard
+          icon={Clock}
+          iconColor="text-orange-600"
+          title="Avg Time to Offer"
+          value={data.summary.avgTimeToOffer}
+          subtitle="days from qualified"
+        />
 
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Zap className="text-purple-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Pipeline Velocity</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.pipelineVelocity}</p>
-                <p className="text-xs text-gray-500 mt-1">price motivated/day</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        <MetricCard
+          icon={Zap}
+          iconColor="text-purple-600"
+          title="Pipeline Velocity"
+          value={data.summary.pipelineVelocity}
+          subtitle="avg days qualified → contract"
+        />
 
         {/* Chart Controls */}
         <div className="bg-white rounded-lg shadow p-6 mb-6">
