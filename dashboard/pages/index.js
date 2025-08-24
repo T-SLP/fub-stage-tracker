@@ -696,15 +696,12 @@ const Dashboard = () => {
             value={data.summary.qualifiedTotal}
           />
           
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Clock className="text-purple-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Qualified Daily Avg</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.qualifiedAvgPerDay}</p>
-              </div>
-            </div>
-          </div>
+          <MetricCard
+            icon={Clock}
+            iconColor="text-purple-600"
+            title="Qualified Daily Avg"
+            value={data.summary.qualifiedAvgPerDay}
+          />
 
           {/* Offers Made Cards */}
           <div className="bg-white rounded-lg shadow p-6">
