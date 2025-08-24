@@ -9,6 +9,7 @@ import ErrorMessage from '../components/common/ErrorMessage';
 import MetricCard from '../components/Cards/MetricCard';
 import ChartTypeToggle from '../components/Header/ChartTypeToggle';
 import TimeRangeSelector from '../components/Header/TimeRangeSelector';
+import DashboardHeader from '../components/Header/DashboardHeader';
 
 const Dashboard = () => {
   const [timeRange, setTimeRange] = useState(TIME_RANGES.CURRENT_WEEK);
@@ -621,33 +622,21 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">FUB Pipeline Dashboard</h1>
-              <p className="text-gray-600 mt-1">Track qualified leads, offers made, and price motivated leads with advanced metrics</p>
-            </div>
-            <div className="flex items-center space-x-4 flex-wrap">
-              <TimeRangeSelector
-                timeRange={timeRange}
-                customStartDate={customStartDate}
-                customEndDate={customEndDate}
-                onTimeRangeChange={setTimeRange}
-                onCustomStartDateChange={setCustomStartDate}
-                onCustomEndDateChange={setCustomEndDate}
-              />
+      <DashboardHeader>
+        <TimeRangeSelector
+          timeRange={timeRange}
+          customStartDate={customStartDate}
+          customEndDate={customEndDate}
+          onTimeRangeChange={setTimeRange}
+          onCustomStartDateChange={setCustomStartDate}
+          onCustomEndDateChange={setCustomEndDate}
+        />
 
-              {/* Chart Type Toggle */}
-              <ChartTypeToggle
-                chartType={chartType}
-                onChartTypeChange={setChartType}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
+        <ChartTypeToggle
+          chartType={chartType}
+          onChartTypeChange={setChartType}
+        />
+      </DashboardHeader>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Volume Summary Cards */}
