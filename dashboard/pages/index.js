@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Calendar, TrendingUp, Users, Clock, Target, Award, Filter, Zap } from 'lucide-react';
-// ADD THESE NEW IMPORTS (don't change any existing imports)
 import { TIME_RANGES, CHART_TYPES, STAGES, PIE_COLORS } from '../utils/constants';
 import { getWeekStart as getWeekStartHelper, getDateRange as getDateRangeHelper, getBusinessDays, isDateInRange } from '../utils/dateHelpers';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -14,6 +13,7 @@ import CombinedTrendChart from '../components/Charts/CombinedTrendChart';
 import VolumeComparisonChart from '../components/Charts/VolumeComparisonChart';
 import CampaignPerformanceChart from '../components/Charts/CampaignPerformanceChart';
 import LeadSourceChart from '../components/Charts/LeadSourceChart';
+import RecentActivityTable from '../components/Activity/RecentActivityTable';
 
 const Dashboard = () => {
   const [timeRange, setTimeRange] = useState(TIME_RANGES.CURRENT_WEEK);
@@ -25,16 +25,12 @@ const Dashboard = () => {
     offers: true,
     priceMotivated: true
   });
-  const [stageFilter, setStageFilter] = useState('all');
-  const [campaignFilter, setCampaignFilter] = useState('all');
   const [campaignTimeRange, setCampaignTimeRange] = useState(TIME_RANGES.CURRENT_WEEK);
   const [campaignCustomStartDate, setCampaignCustomStartDate] = useState('');
   const [campaignCustomEndDate, setCampaignCustomEndDate] = useState('');
   const [leadSourceTimeRange, setLeadSourceTimeRange] = useState(TIME_RANGES.CURRENT_WEEK);
   const [leadSourceCustomStartDate, setLeadSourceCustomStartDate] = useState('');
   const [leadSourceCustomEndDate, setLeadSourceCustomEndDate] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 25;
   const [data, setData] = useState({
     dailyMetrics: [],
     weeklyMetrics: [],
@@ -572,36 +568,6 @@ const Dashboard = () => {
       fetchLeadSourceData();
     }
   }, [leadSourceTimeRange, leadSourceCustomStartDate, leadSourceCustomEndDate]);
-  
-  // Update filtered activity when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-    let filtered = data.recentActivity;
-    
-    if (stageFilter !== 'all') {
-      filtered = filtered.filter(activity => activity.stage === stageFilter);
-    }
-    
-    if (campaignFilter !== 'all') {
-      filtered = filtered.filter(activity => activity.campaign_code === campaignFilter);
-    }
-    
-    setData(prev => ({ ...prev, filteredActivity: filtered }));
-  }, [stageFilter, campaignFilter, data.recentActivity]);
-
-  const getChangePercentage = (current, previous) => {
-    if (previous === 0) return current > 0 ? 100 : 0;
-    return Math.round(((current - previous) / previous) * 100);
-  };
-
-  const handleLineToggle = (lineKey) => {
-    setVisibleLines(prev => ({
-      ...prev,
-      [lineKey]: !prev[lineKey]
-    }));
-  };
-
-  const chartData = chartType === CHART_TYPES.WEEKLY ? data.weeklyMetrics : data.dailyMetrics;
 
   // Colors for pie chart
   const PIE_COLORS = ['#2563eb', '#16a34a', '#dc2626', '#ca8a04', '#9333ea', '#c2410c'];
@@ -796,224 +762,7 @@ const Dashboard = () => {
           onLeadSourceCustomEndDateChange={setLeadSourceCustomEndDate}
         />
 
-        {/* Recent Activity */}
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Recent Pipeline Activity</h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  Showing {data.filteredActivity.length} activities from selected date range
-                </p>
-              </div>
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                  <Filter className="text-gray-400" size={20} />
-                  <label className="text-sm text-gray-600 font-medium">Stage:</label>
-                  <select
-                    value={stageFilter}
-                    onChange={(e) => setStageFilter(e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="all">All Stages</option>
-                    <option value="ACQ - Qualified">ACQ - Qualified</option>
-                    <option value="ACQ - Offers Made">ACQ - Offers Made</option>
-                    <option value="ACQ - Price Motivated">ACQ - Price Motivated</option>
-                  </select>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <label className="text-sm text-gray-600 font-medium">Campaign:</label>
-                  <select
-                    value={campaignFilter}
-                    onChange={(e) => setCampaignFilter(e.target.value)}
-                    className="border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="all">All Campaigns</option>
-                    {data.availableCampaigns.map(campaign => (
-                      <option key={campaign} value={campaign}>{campaign}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    New Stage
-                    {stageFilter !== 'all' && (
-                      <span className="ml-1 text-blue-600">• Filtered</span>
-                    )}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Campaign Code
-                    {campaignFilter !== 'all' && (
-                      <span className="ml-1 text-blue-600">• Filtered</span>
-                    )}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Lead Source
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Previous Stage
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {(currentPageData || []).map((activity, index) => (
-                  <tr key={startIndex + index} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{activity.name}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        activity.stage === 'ACQ - Qualified' 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : activity.stage === 'ACQ - Offers Made'
-                          ? 'bg-orange-100 text-orange-800'
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {activity.stage}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-800 rounded-full">
-                        {activity.campaign_code}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        activity.lead_source === 'ReadyMode' 
-                          ? 'bg-blue-100 text-blue-800'
-                          : activity.lead_source === 'Roor'
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {activity.lead_source}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
-                        {activity.previous_stage}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {new Date(activity.created_at).toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {data.filteredActivity.length === 0 && !loading && (
-              <div className="text-center py-8 text-gray-500">
-                <p className="text-lg font-medium">No pipeline activity found</p>
-                <p className="text-sm mt-2">No stage changes found for the selected time period and filters</p>
-              </div>
-            )}
-          </div>
-          
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="px-6 py-4 border-t border-gray-200">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-700">
-                  Showing {startIndex + 1} to {Math.min(endIndex, data.filteredActivity.length)} of {data.filteredActivity.length} results
-                </div>
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => goToPage(currentPage - 1)}
-                    disabled={currentPage === 1}
-                    className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Previous
-                  </button>
-                  
-                  {/* Page numbers with ellipsis */}
-                  <div className="flex space-x-1">
-                    {/* Always show first page */}
-                    {currentPage > 3 && (
-                      <>
-                        <button
-                          onClick={() => goToPage(1)}
-                          className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                        >
-                          1
-                        </button>
-                        {currentPage > 4 && (
-                          <span className="px-3 py-2 text-sm font-medium text-gray-500">...</span>
-                        )}
-                      </>
-                    )}
-                    
-                    {/* Current page range */}
-                    {[...Array(Math.min(totalPages, 5))].map((_, i) => {
-                      let pageNum;
-                      if (totalPages <= 5) {
-                        pageNum = i + 1;
-                      } else if (currentPage <= 3) {
-                        pageNum = i + 1;
-                      } else if (currentPage >= totalPages - 2) {
-                        pageNum = totalPages - 4 + i;
-                      } else {
-                        pageNum = currentPage - 2 + i;
-                      }
-                      
-                      // Skip if this page is already shown as first page
-                      if (pageNum === 1 && currentPage > 3) return null;
-                      // Skip if this page will be shown as last page
-                      if (pageNum === totalPages && currentPage < totalPages - 2 && totalPages > 5) return null;
-                      
-                      return (
-                        <button
-                          key={pageNum}
-                          onClick={() => goToPage(pageNum)}
-                          className={`px-3 py-2 text-sm font-medium rounded-md ${
-                            currentPage === pageNum
-                              ? 'bg-blue-600 text-white'
-                              : 'text-gray-500 bg-white border border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          {pageNum}
-                        </button>
-                      );
-                    })}
-                    
-                    {/* Always show last page */}
-                    {currentPage < totalPages - 2 && totalPages > 5 && (
-                      <>
-                        {currentPage < totalPages - 3 && (
-                          <span className="px-3 py-2 text-sm font-medium text-gray-500">...</span>
-                        )}
-                        <button
-                          onClick={() => goToPage(totalPages)}
-                          className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                        >
-                          {totalPages}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                  
-                  <button
-                    onClick={() => goToPage(currentPage + 1)}
-                    disabled={currentPage === totalPages}
-                    className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        <RecentActivityTable data={data} />
       </div>
     </div>
   );
