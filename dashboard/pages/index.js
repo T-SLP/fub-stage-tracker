@@ -594,7 +594,7 @@ const Dashboard = () => {
     }));
   };
 
-  const chartData = chartType === 'weekly' ? data.weeklyMetrics : data.dailyMetrics;
+  const chartData = chartType === CHART_TYPES.WEEKLY ? data.weeklyMetrics : data.dailyMetrics;
 
   // Colors for pie chart
   const PIE_COLORS = ['#2563eb', '#16a34a', '#dc2626', '#ca8a04', '#9333ea', '#c2410c'];
@@ -676,8 +676,8 @@ const Dashboard = () => {
                   onChange={(e) => setChartType(e.target.value)}
                   className="border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="daily">Daily View</option>
-                  <option value="weekly">Weekly View</option>
+                  <option value={CHART_TYPES.DAILY}>Daily View</option>
+                  <option value={CHART_TYPES.WEEKLY}>Weekly View</option>
                 </select>
               </div>
             </div>
@@ -809,7 +809,7 @@ const Dashboard = () => {
           {/* Combined Trend Line Chart */}
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              {chartType === 'weekly' ? 'Weekly' : 'Daily'} Pipeline Activity
+              {chartType === CHART_TYPES.WEEKLY ? 'Weekly' : 'Daily'} Pipeline Activity
             </h3>
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={chartData}>
@@ -854,7 +854,7 @@ const Dashboard = () => {
           {/* Bar Chart Comparison */}
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              {chartType === 'weekly' ? 'Weekly' : 'Daily'} Volume Comparison
+              {chartType === CHART_TYPES.WEEKLY ? 'Weekly' : 'Daily'} Volume Comparison
             </h3>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={chartData}>
