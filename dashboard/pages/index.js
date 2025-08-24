@@ -704,46 +704,34 @@ const Dashboard = () => {
           />
 
           {/* Offers Made Cards */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Target className="text-orange-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Total Offers</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.offersTotal}</p>
-              </div>
-            </div>
-          </div>
+          <MetricCard
+            icon={Target}
+            iconColor="text-orange-600"
+            title="Total Offers"
+            value={data.summary.offersTotal}
+          />
           
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Clock className="text-indigo-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Offers Daily Avg</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.offersAvgPerDay}</p>
-              </div>
-            </div>
-          </div>
+          <MetricCard
+            icon={Clock}
+            iconColor="text-indigo-600"
+            title="Offers Daily Avg"
+            value={data.summary.offersAvgPerDay}
+          />
 
           {/* Price Motivated Cards */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <TrendingUp className="text-yellow-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Total Price Motivated</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.priceMotivatedTotal}</p>
-              </div>
-            </div>
-          </div>
+          <MetricCard
+            icon={TrendingUp}
+            iconColor="text-yellow-600"
+            title="Total Price Motivated"
+            value={data.summary.priceMotivatedTotal}
+          />
           
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <Clock className="text-teal-600" size={24} />
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Price Motivated Daily Avg</p>
-                <p className="text-2xl font-bold text-gray-900">{data.summary.priceMotivatedAvgPerDay}</p>
-              </div>
-            </div>
-          </div>
+          <MetricCard
+            icon={Clock}
+            iconColor="text-teal-600"
+            title="Price Motivated Daily Avg"
+            value={data.summary.priceMotivatedAvgPerDay}
+          />
         </div>
 
         {/* Advanced Metrics Cards */}
