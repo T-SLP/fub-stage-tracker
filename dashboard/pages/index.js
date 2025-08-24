@@ -635,23 +635,23 @@ const Dashboard = () => {
                   value={timeRange} 
                   onChange={(e) => {
                     setTimeRange(e.target.value);
-                    if (e.target.value !== 'custom') {
+                    if (e.target.value !== TIME_RANGES.CUSTOM) {
                       setCustomStartDate('');
                       setCustomEndDate('');
                     }
                   }}
                   className="border border-gray-300 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="current_week">Current Week</option>
-                  <option value="last_week">Last Week</option>
-                  <option value="30d">Last 30 Days</option>
-                  <option value="90d">Last 90 Days</option>
-                  <option value="custom">Custom Range</option>
+                  <option value={TIME_RANGES.CURRENT_WEEK}>Current Week</option>
+                  <option value={TIME_RANGES.LAST_WEEK}>Last Week</option>
+                  <option value={TIME_RANGES.THIRTY_DAYS}>Last 30 Days</option>
+                  <option value={TIME_RANGES.NINETY_DAYS}>Last 90 Days</option>
+                  <option value={TIME_RANGES.CUSTOM}>Custom Range</option>
                 </select>
               </div>
 
               {/* Custom Date Range */}
-              {timeRange === 'custom' && (
+              {timeRange === TIME_RANGES.CUSTOM && (
                 <div className="flex items-center space-x-2">
                   <input
                     type="date"
