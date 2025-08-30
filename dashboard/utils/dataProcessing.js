@@ -267,6 +267,27 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     leads: 0
   }));
 
+  // Calculate lead source metrics for initial load
+  const leadSourceCounts = {};
+  stageChanges.forEach(change => {
+    if (change.stage_to === 'ACQ - Qualified') {
+      const source = change.lead_source_tag || 'Unknown';
+      leadSourceCounts[source] = (leadSourceCounts[source] || 0) + 1;
+    }
+  });
+
+  const leadSourceMetrics = Object.entries(leadSourceCounts).map(([source, count]) => ({
+    name: source,
+    value: count,
+    percentage: 0
+  }));
+
+  // Calculate percentages
+  const leadSourceTotal = leadSourceMetrics.reduce((sum, item) => sum + item.value, 0);
+  leadSourceMetrics.forEach(item => {
+    item.percentage = leadSourceTotal > 0 ? Math.round((item.value / leadSourceTotal) * 100) : 0;
+  });
+
   // Calculate advanced metrics
   const qualifiedToOfferRate = qualifiedTotal > 0 ? Math.round((offersTotal / qualifiedTotal) * 100) : 0;
   const qualifiedToPriceMotivatedRate = qualifiedTotal > 0 ? Math.round((priceMotivatedTotal / qualifiedTotal) * 100) : 0;
@@ -277,6 +298,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     dailyMetrics: dailyData,
     weeklyMetrics: weeklyData,
     campaignMetrics,
+    leadSourceMetrics,
     summary: {
       qualifiedTotal,
       qualifiedThisWeek,
@@ -304,7 +326,38 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
 // Fetch campaign data separately
 export const fetchCampaignData = async (campaignTimeRange, campaignCustomStartDate, campaignCustomEndDate) => {
   try {
-    const { start, end } = getDateRange('campaign', null, null, null, campaignTimeRange, campaignCustomStartDate, campaignCustomEndDate);
+    // Simplified date range calculation
+    let start, end;
+    
+    if (campaignCustomStartDate && campaignCustomEndDate) {
+      start = new Date(campaignCustomStartDate);
+      end = new Date(campaignCustomEndDate + 'T23:59:59.999Z');
+    } else {
+      end = new Date();
+      start = new Date();
+      
+      switch (campaignTimeRange) {
+        case 'current_week':
+          const currentWeekStart = getWeekStart(end);
+          start = currentWeekStart;
+          break;
+        case 'last_week':
+          const lastWeekEnd = new Date(getWeekStart(end));
+          lastWeekEnd.setDate(lastWeekEnd.getDate() - 1);
+          start = getWeekStart(lastWeekEnd);
+          end = lastWeekEnd;
+          break;
+        case '30d':
+          start.setDate(start.getDate() - 30);
+          break;
+        case '90d':
+          start.setDate(start.getDate() - 90);
+          break;
+        default:
+          start.setDate(start.getDate() - 30);
+      }
+    }
+
     const startDateStr = start.toISOString().split('T')[0];
     const endDateStr = end.toISOString().split('T')[0];
     
@@ -353,9 +406,42 @@ export const fetchCampaignData = async (campaignTimeRange, campaignCustomStartDa
 // Fetch lead source data separately
 export const fetchLeadSourceData = async (leadSourceTimeRange, leadSourceCustomStartDate, leadSourceCustomEndDate) => {
   try {
-    const { start, end } = getDateRange('leadSource', null, null, null, null, null, null, leadSourceTimeRange, leadSourceCustomStartDate, leadSourceCustomEndDate);
+    // Simplified date range calculation
+    let start, end;
+    
+    if (leadSourceCustomStartDate && leadSourceCustomEndDate) {
+      start = new Date(leadSourceCustomStartDate);
+      end = new Date(leadSourceCustomEndDate + 'T23:59:59.999Z');
+    } else {
+      end = new Date();
+      start = new Date();
+      
+      switch (leadSourceTimeRange) {
+        case 'current_week':
+          const currentWeekStart = getWeekStart(end);
+          start = currentWeekStart;
+          break;
+        case 'last_week':
+          const lastWeekEnd = new Date(getWeekStart(end));
+          lastWeekEnd.setDate(lastWeekEnd.getDate() - 1);
+          start = getWeekStart(lastWeekEnd);
+          end = lastWeekEnd;
+          break;
+        case '30d':
+          start.setDate(start.getDate() - 30);
+          break;
+        case '90d':
+          start.setDate(start.getDate() - 90);
+          break;
+        default:
+          start.setDate(start.getDate() - 30);
+      }
+    }
+
     const startDateStr = start.toISOString().split('T')[0];
     const endDateStr = end.toISOString().split('T')[0];
+    
+    console.log('Fetching lead source data for:', startDateStr, 'to', endDateStr);
     
     const response = await fetch('/api/pipeline-data', {
       method: 'POST',
@@ -373,6 +459,7 @@ export const fetchLeadSourceData = async (leadSourceTimeRange, leadSourceCustomS
     }
     
     const stageChanges = await response.json();
+    console.log('Lead source stage changes received:', stageChanges.length);
     
     // Calculate lead source metrics for qualified leads only
     const leadSourceCounts = {};
@@ -383,10 +470,12 @@ export const fetchLeadSourceData = async (leadSourceTimeRange, leadSourceCustomS
       }
     });
 
+    console.log('Lead source counts:', leadSourceCounts);
+
     const leadSourceMetrics = Object.entries(leadSourceCounts).map(([source, count]) => ({
       name: source,
       value: count,
-      percentage: 0 // Will be calculated below
+      percentage: 0
     }));
 
     // Calculate percentages
@@ -395,6 +484,7 @@ export const fetchLeadSourceData = async (leadSourceTimeRange, leadSourceCustomS
       item.percentage = total > 0 ? Math.round((item.value / total) * 100) : 0;
     });
 
+    console.log('Final lead source metrics:', leadSourceMetrics);
     return leadSourceMetrics;
     
   } catch (error) {
