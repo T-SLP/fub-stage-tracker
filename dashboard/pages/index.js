@@ -19,7 +19,6 @@ import DashboardHeader from '../components/Header/DashboardHeader';
 import TimeRangeSelector from '../components/Header/TimeRangeSelector';
 import ChartTypeToggle from '../components/Header/ChartTypeToggle';
 import ChartControls from '../components/Charts/ChartControls';
-import CombinedTrendChart from '../components/Charts/CombinedTrendChart';
 import VolumeComparisonChart from '../components/Charts/VolumeComparisonChart';
 import CampaignPerformanceChart from '../components/Charts/CampaignPerformanceChart';
 import LeadSourceChart from '../components/Charts/LeadSourceChart';
@@ -291,13 +290,7 @@ const Dashboard = () => {
         />
 
         {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <CombinedTrendChart
-            data={chartData}
-            visibleLines={visibleLines}
-            chartType={chartType}
-          />
-
+        <div className="mb-8">
           <VolumeComparisonChart
             data={chartData}
             visibleLines={visibleLines}
