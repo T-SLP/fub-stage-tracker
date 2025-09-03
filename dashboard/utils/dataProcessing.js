@@ -72,6 +72,118 @@ export const getBusinessDays = (startDate, endDate) => {
   return businessDays;
 };
 
+// Calculate average time from ACQ - Qualified to ACQ - Offers Made
+const calculateAvgTimeToOffer = (stageChanges) => {
+  // Group stage changes by person_id to track individual lead journeys
+  const leadJourneys = {};
+  
+  stageChanges.forEach(change => {
+    const personId = change.person_id;
+    if (!leadJourneys[personId]) {
+      leadJourneys[personId] = [];
+    }
+    leadJourneys[personId].push({
+      stage: change.stage_to,
+      timestamp: new Date(change.changed_at)
+    });
+  });
+
+  // Calculate time to offer for each lead that progressed from Qualified to Offers Made
+  const timesToOffer = [];
+  
+  Object.values(leadJourneys).forEach(journey => {
+    // Sort by timestamp to ensure chronological order
+    journey.sort((a, b) => a.timestamp - b.timestamp);
+    
+    let qualifiedTime = null;
+    
+    for (const stage of journey) {
+      if (stage.stage === 'ACQ - Qualified' && !qualifiedTime) {
+        // Record the first time they entered Qualified stage
+        qualifiedTime = stage.timestamp;
+      } else if (stage.stage === 'ACQ - Offers Made' && qualifiedTime) {
+        // Calculate time difference in days
+        const timeDiff = (stage.timestamp - qualifiedTime) / (1000 * 60 * 60 * 24);
+        timesToOffer.push(timeDiff);
+        break; // Only count the first transition to Offers Made
+      }
+    }
+  });
+
+  // Calculate average
+  if (timesToOffer.length === 0) {
+    return 0;
+  }
+  
+  const avgDays = timesToOffer.reduce((sum, days) => sum + days, 0) / timesToOffer.length;
+  return Math.round(avgDays * 10) / 10; // Round to 1 decimal place
+};
+
+// Check if a stage change represents a throwaway lead
+const isThrowawayLead = (change) => {
+  const qualifiedStages = [
+    'ACQ - Qualified',
+    'Qualified Phase 2 - Day 3 to 2 weeks',
+    'Qualified Phase 3 - 2 weeks to 4 weeks'
+  ];
+  
+  const throwawayStages = [
+    'ACQ - Price Motivated',
+    'ACQ - Not Interested',
+    'ACQ - Not Ready to Sell',
+    'ACQ - Dead/DNC'
+  ];
+  
+  return qualifiedStages.includes(change.stage_from) && throwawayStages.includes(change.stage_to);
+};
+
+// Calculate pipeline velocity - average days from ACQ - Qualified to ACQ - Under Contract
+const calculatePipelineVelocity = (stageChanges) => {
+  // Group stage changes by person_id to track individual lead journeys
+  const leadJourneys = {};
+  
+  stageChanges.forEach(change => {
+    const personId = change.person_id;
+    if (!leadJourneys[personId]) {
+      leadJourneys[personId] = [];
+    }
+    leadJourneys[personId].push({
+      stage: change.stage_to,
+      timestamp: new Date(change.changed_at)
+    });
+  });
+
+  // Calculate time to under contract for each lead that progressed from Qualified to Under Contract
+  const timesToContract = [];
+  
+  Object.values(leadJourneys).forEach(journey => {
+    // Sort by timestamp to ensure chronological order
+    journey.sort((a, b) => a.timestamp - b.timestamp);
+    
+    let qualifiedTime = null;
+    
+    for (const stage of journey) {
+      if (stage.stage === 'ACQ - Qualified' && !qualifiedTime) {
+        // Record the first time they entered Qualified stage
+        qualifiedTime = stage.timestamp;
+      } else if (stage.stage === 'ACQ - Under Contract' && qualifiedTime) {
+        // Calculate time difference in days
+        const timeDiff = (stage.timestamp - qualifiedTime) / (1000 * 60 * 60 * 24);
+        timesToContract.push(timeDiff);
+        break; // Only count the first transition to Under Contract
+      }
+    }
+  });
+
+  // Calculate average
+  if (timesToContract.length === 0) {
+    return 0;
+  }
+  
+  const avgDays = timesToContract.reduce((sum, days) => sum + days, 0) / timesToContract.length;
+  return Math.round(avgDays * 10) / 10; // Round to 1 decimal place
+};
+
 // Fetch real data from API
 export const fetchRealData = async (startDate, endDate, businessDays) => {
   try {
@@ -119,6 +231,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       qualified: 0,
       offers: 0,
       priceMotivated: 0,
+      throwawayLeads: 0,
       dateFormatted: date.toLocaleDateString('en-US', { 
         month: 'short', 
         day: 'numeric',
@@ -138,6 +251,8 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
         dayData.offers++;
       } else if (change.stage_to === 'ACQ - Price Motivated') {
         dayData.priceMotivated++;
+      } else if (isThrowawayLead(change)) {
+        dayData.throwawayLeads++;
       }
     }
   });
@@ -157,6 +272,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
         qualified: 0,
         offers: 0,
         priceMotivated: 0,
+        throwawayLeads: 0,
         dateFormatted: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
       });
     }
@@ -165,6 +281,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     weekData.qualified += day.qualified;
     weekData.offers += day.offers;
     weekData.priceMotivated += day.priceMotivated;
+    weekData.throwawayLeads += day.throwawayLeads;
   });
 
   const weeklyData = Array.from(weeks.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -291,8 +408,12 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   // Calculate advanced metrics
   const qualifiedToOfferRate = qualifiedTotal > 0 ? Math.round((offersTotal / qualifiedTotal) * 100) : 0;
   const qualifiedToPriceMotivatedRate = qualifiedTotal > 0 ? Math.round((priceMotivatedTotal / qualifiedTotal) * 100) : 0;
-  const avgTimeToOffer = Math.round((Math.random() * 5 + 2) * 10) / 10; // Placeholder
-  const pipelineVelocity = businessDays > 0 ? Math.round((priceMotivatedTotal / businessDays) * 10) / 10 : 0;
+  
+  // Calculate real average time to offer
+  const avgTimeToOffer = calculateAvgTimeToOffer(stageChanges);
+  
+  // Calculate pipeline velocity - average days from Qualified to Under Contract
+  const pipelineVelocity = calculatePipelineVelocity(stageChanges);
 
   return {
     dailyMetrics: dailyData,

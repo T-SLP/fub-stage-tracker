@@ -17,6 +17,7 @@ const VolumeComparisonChart = ({ data, visibleLines, chartType }) => {
           {visibleLines.qualified && <Bar dataKey="qualified" fill="#2563eb" name="Qualified" />}
           {visibleLines.offers && <Bar dataKey="offers" fill="#ea580c" name="Offers" />}
           {visibleLines.priceMotivated && <Bar dataKey="priceMotivated" fill="#eab308" name="Price Motivated" />}
+          {visibleLines.throwawayLeads && <Bar dataKey="throwawayLeads" fill="#dc2626" name="Throwaway Leads" />}
         </BarChart>
       </ResponsiveContainer>
     </div>

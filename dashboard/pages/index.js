@@ -33,7 +33,8 @@ const Dashboard = () => {
   const [visibleLines, setVisibleLines] = useState({
     qualified: true,
     offers: true,
-    priceMotivated: true
+    priceMotivated: true,
+    throwawayLeads: true
   });
   const [campaignTimeRange, setCampaignTimeRange] = useState(TIME_RANGES.CURRENT_WEEK);
   const [campaignCustomStartDate, setCampaignCustomStartDate] = useState('');

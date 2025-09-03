@@ -41,6 +41,18 @@ const ChartControls = ({ visibleLines, onLineToggle }) => {
             Price Motivated
           </span>
         </label>
+        <label className="flex items-center cursor-pointer">
+          <input
+            type="checkbox"
+            checked={visibleLines.throwawayLeads}
+            onChange={() => onLineToggle('throwawayLeads')}
+            className="mr-2"
+          />
+          <span className="flex items-center">
+            <div className="w-4 h-4 bg-red-600 rounded mr-2"></div>
+            Throwaway Leads
+          </span>
+        </label>
       </div>
     </div>
   );
