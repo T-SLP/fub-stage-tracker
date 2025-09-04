@@ -123,15 +123,15 @@ const calculateAvgTimeToOffer = (stageChanges) => {
 const isThrowawayLead = (change) => {
   const qualifiedStages = [
     'ACQ - Qualified',
-    'Qualified Phase 2 - Day 3 to 2 weeks',
-    'Qualified Phase 3 - 2 weeks to 4 weeks'
+    'Qualified Phase 2 - Day 3 to 2 Weeks',  // Fixed: capital W
+    'Qualified Phase 3 - 2 Weeks to 4 Weeks'  // Fixed: capital W
   ];
   
   const throwawayStages = [
     'ACQ - Price Motivated',
     'ACQ - Not Interested',
     'ACQ - Not Ready to Sell',
-    'ACQ - Dead/DNC'
+    'ACQ - Dead / DNC'  // Fixed: space around slash
   ];
   
   const isThrowaway = qualifiedStages.includes(change.stage_from) && throwawayStages.includes(change.stage_to);
@@ -384,7 +384,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   const throwawayStages = [
     'ACQ - Not Interested',
     'ACQ - Not Ready to Sell', 
-    'ACQ - Dead/DNC'
+    'ACQ - Dead / DNC'  // Fixed: space around slash
   ];
   
   const relevantStages = [...barChartStages, ...throwawayStages];
@@ -555,7 +555,8 @@ export const fetchCampaignData = async (campaignTimeRange, campaignCustomStartDa
       throw new Error(`API error: ${response.status}`);
     }
     
-    const stageChanges = await response.json();
+    const responseData = await response.json();
+    const stageChanges = responseData.stageChanges || responseData; // Handle new format
     
     // Calculate campaign metrics
     const campaignCounts = {};
@@ -637,7 +638,8 @@ export const fetchLeadSourceData = async (leadSourceTimeRange, leadSourceCustomS
       throw new Error(`API error: ${response.status}`);
     }
     
-    const stageChanges = await response.json();
+    const responseData = await response.json();
+    const stageChanges = responseData.stageChanges || responseData; // Handle new format
     console.log('Lead source stage changes received:', stageChanges.length);
     
     // Calculate lead source metrics for qualified leads only
