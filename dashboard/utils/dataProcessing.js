@@ -374,27 +374,19 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       return changeDate >= lastWeekStart && changeDate <= lastWeekEnd && change.stage_to === 'ACQ - Price Motivated';
     }).length;
 
-  // Process recent activity (last 100, newest first) - only show stages that match bar chart
+  // Process recent activity (last 100, newest first) - only show bar chart stages + throwaway leads
   const barChartStages = [
     'ACQ - Qualified',
     'ACQ - Offers Made', 
     'ACQ - Price Motivated'
   ];
   
-  const throwawayStages = [
-    'ACQ - Not Interested',
-    'ACQ - Not Ready to Sell', 
-    'ACQ - Dead / DNC'  // Fixed: space around slash to match database
-  ];
-  
-  const relevantStages = [...barChartStages, ...throwawayStages];
-  
-  console.log('📋 Activity table will show these stages:', relevantStages);
+  console.log('📋 Activity table will show these stages + throwaway leads:', barChartStages);
   
   const recentActivity = stageChanges
     .filter(change => {
-      // Only show stages that match exactly what's in the bar chart
-      const isBarChartStage = relevantStages.includes(change.stage_to);
+      // Show bar chart stages OR throwaway lead transitions
+      const isBarChartStage = barChartStages.includes(change.stage_to);
       const isThrowaway = isThrowawayLead(change);
       
       // Debug: log what's being filtered
