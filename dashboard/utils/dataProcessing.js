@@ -399,7 +399,8 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     .slice(0, 100)
     .map(change => ({
       name: `${change.first_name || 'Unknown'} ${change.last_name || ''}`.trim(),
-      stage: change.stage_to,
+      stage: isThrowawayLead(change) ? 'Throwaway Lead' : change.stage_to,
+      actual_stage: change.stage_to,  // Keep original stage for reference
       campaign_code: change.campaign_id || 'No Campaign',
       lead_source: change.lead_source_tag || 'Unknown',
       created_at: change.changed_at,

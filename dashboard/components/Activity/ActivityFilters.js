@@ -22,6 +22,7 @@ const ActivityFilters = ({
           <option value="ACQ - Qualified">ACQ - Qualified</option>
           <option value="ACQ - Offers Made">ACQ - Offers Made</option>
           <option value="ACQ - Price Motivated">ACQ - Price Motivated</option>
+          <option value="Throwaway Lead">Throwaway Leads</option>
         </select>
       </div>
       <div className="flex items-center space-x-2">
