@@ -213,7 +213,7 @@ const Dashboard = () => {
 
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Volume Summary Cards - Row 1 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
           <MetricCard
             icon={Users}
             iconColor="text-blue-600"
@@ -234,17 +234,17 @@ const Dashboard = () => {
             title="Throwaway Leads"
             value={data.summary.throwawayTotal}
           />
+        </div>
 
+        {/* Volume Summary Cards - Row 2 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <MetricCard
             icon={Target}
             iconColor="text-green-600"
             title="Total Offers"
             value={data.summary.offersTotal}
           />
-        </div>
 
-        {/* Volume Summary Cards - Row 2 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <MetricCard
             icon={Clock}
             iconColor="text-indigo-600"
