@@ -380,8 +380,21 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   
   const relevantStages = [...barChartStages, ...throwawayStages];
   
+  console.log('📋 Activity table will show these stages:', relevantStages);
+  
   const recentActivity = stageChanges
-    .filter(change => relevantStages.includes(change.stage_to) || isThrowawayLead(change))
+    .filter(change => {
+      // Only show stages that match exactly what's in the bar chart
+      const isBarChartStage = relevantStages.includes(change.stage_to);
+      const isThrowaway = isThrowawayLead(change);
+      
+      // Debug: log what's being filtered
+      if (!isBarChartStage && !isThrowaway) {
+        console.log('🚫 Filtered out stage:', change.stage_to, 'from:', change.stage_from);
+      }
+      
+      return isBarChartStage || isThrowaway;
+    })
     .slice(0, 100)
     .map(change => ({
       name: `${change.first_name || 'Unknown'} ${change.last_name || ''}`.trim(),
