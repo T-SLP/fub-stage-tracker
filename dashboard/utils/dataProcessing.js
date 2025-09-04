@@ -365,8 +365,23 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       return changeDate >= lastWeekStart && changeDate <= lastWeekEnd && change.stage_to === 'ACQ - Price Motivated';
     }).length;
 
-  // Process recent activity (last 100, newest first)
+  // Process recent activity (last 100, newest first) - only show stages that match bar chart
+  const barChartStages = [
+    'ACQ - Qualified',
+    'ACQ - Offers Made', 
+    'ACQ - Price Motivated'
+  ];
+  
+  const throwawayStages = [
+    'ACQ - Not Interested',
+    'ACQ - Not Ready to Sell', 
+    'ACQ - Dead/DNC'
+  ];
+  
+  const relevantStages = [...barChartStages, ...throwawayStages];
+  
   const recentActivity = stageChanges
+    .filter(change => relevantStages.includes(change.stage_to) || isThrowawayLead(change))
     .slice(0, 100)
     .map(change => ({
       name: `${change.first_name || 'Unknown'} ${change.last_name || ''}`.trim(),
