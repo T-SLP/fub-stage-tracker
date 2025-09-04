@@ -37,7 +37,6 @@ export default async function handler(req, res) {
       WHERE changed_at >= $1 
         AND changed_at <= $2
         AND stage_to != 'Contact Upload'
-        AND stage_from != 'Contact Upload'
       ORDER BY changed_at DESC
     `;
 
