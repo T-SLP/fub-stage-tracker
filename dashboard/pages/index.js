@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Clock, Target, TrendingUp, Zap } from 'lucide-react';
+import { Users, Clock, Target, TrendingUp, Zap, Trash2 } from 'lucide-react';
 
 // Constants and Utils
 import { TIME_RANGES, CHART_TYPES } from '../utils/constants';
@@ -212,8 +212,8 @@ const Dashboard = () => {
       </DashboardHeader>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Volume Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-8">
+        {/* Volume Summary Cards - Row 1 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
           <MetricCard
             icon={Users}
             iconColor="text-blue-600"
@@ -229,12 +229,22 @@ const Dashboard = () => {
           />
 
           <MetricCard
+            icon={Trash2}
+            iconColor="text-red-600"
+            title="Throwaway Leads"
+            value={data.summary.throwawayTotal}
+          />
+
+          <MetricCard
             icon={Target}
-            iconColor="text-orange-600"
+            iconColor="text-green-600"
             title="Total Offers"
             value={data.summary.offersTotal}
           />
-          
+        </div>
+
+        {/* Volume Summary Cards - Row 2 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <MetricCard
             icon={Clock}
             iconColor="text-indigo-600"

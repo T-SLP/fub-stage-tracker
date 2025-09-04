@@ -320,6 +320,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   const qualifiedTotal = dailyData.reduce((sum, day) => sum + day.qualified, 0);
   const offersTotal = dailyData.reduce((sum, day) => sum + day.offers, 0);
   const priceMotivatedTotal = dailyData.reduce((sum, day) => sum + day.priceMotivated, 0);
+  const throwawayTotal = dailyData.reduce((sum, day) => sum + day.throwawayLeads, 0);
   
   // Week comparisons - always calculate based on actual current date for consistency
   const today = new Date();
@@ -481,6 +482,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       priceMotivatedTotal,
       priceMotivatedThisWeek,
       priceMotivatedLastWeek,
+      throwawayTotal,
       qualifiedAvgPerDay: businessDays > 0 ? Math.round((qualifiedTotal / businessDays) * 10) / 10 : 0,
       offersAvgPerDay: businessDays > 0 ? Math.round((offersTotal / businessDays) * 10) / 10 : 0,
       priceMotivatedAvgPerDay: businessDays > 0 ? Math.round((priceMotivatedTotal / businessDays) * 10) / 10 : 0,
