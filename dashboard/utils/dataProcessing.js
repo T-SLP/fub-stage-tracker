@@ -384,7 +384,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   const throwawayStages = [
     'ACQ - Not Interested',
     'ACQ - Not Ready to Sell', 
-    'ACQ - Dead / DNC'  // Fixed: space around slash
+    'ACQ - Dead / DNC'  // Fixed: space around slash to match database
   ];
   
   const relevantStages = [...barChartStages, ...throwawayStages];
