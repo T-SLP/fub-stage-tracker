@@ -36,12 +36,8 @@ export default async function handler(req, res) {
       FROM stage_changes 
       WHERE changed_at >= $1 
         AND changed_at <= $2
-        AND (
-          stage_to IN ('ACQ - Qualified', 'ACQ - Offers Made', 'ACQ - Price Motivated', 'ACQ - Under Contract')
-          OR 
-          (stage_from IN ('ACQ - Qualified', 'Qualified Phase 2 - Day 3 to 2 weeks', 'Qualified Phase 3 - 2 weeks to 4 weeks') 
-           AND stage_to IN ('ACQ - Price Motivated', 'ACQ - Not Interested', 'ACQ - Not Ready to Sell', 'ACQ - Dead/DNC'))
-        )
+        AND stage_to != 'Contact Upload'
+        AND stage_from != 'Contact Upload'
       ORDER BY changed_at DESC
     `;
 
