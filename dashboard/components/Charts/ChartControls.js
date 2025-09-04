@@ -25,7 +25,7 @@ const ChartControls = ({ visibleLines, onLineToggle }) => {
             className="mr-2"
           />
           <span className="flex items-center">
-            <div className="w-4 h-4 bg-orange-600 rounded mr-2"></div>
+            <div className="w-4 h-4 bg-green-600 rounded mr-2"></div>
             Offers Made
           </span>
         </label>
