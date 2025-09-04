@@ -22,6 +22,25 @@ export default async function handler(req, res) {
   try {
     await client.connect();
 
+    // First, get all unique stage names to understand the data structure
+    const stageAnalysisQuery = `
+      SELECT 
+        stage_to,
+        stage_from,
+        COUNT(*) as count
+      FROM stage_changes 
+      WHERE changed_at >= $1 
+        AND changed_at <= $2
+        AND stage_to != 'Contact Upload'
+      GROUP BY stage_to, stage_from
+      ORDER BY count DESC
+    `;
+
+    const stageAnalysis = await client.query(stageAnalysisQuery, [
+      `${startDate}T00:00:00Z`,
+      `${endDate}T23:59:59Z`
+    ]);
+
     const query = `
       SELECT 
         id,
@@ -47,7 +66,11 @@ export default async function handler(req, res) {
 
     await client.end();
 
-    res.status(200).json(result.rows);
+    // Include stage analysis in response for debugging
+    res.status(200).json({
+      stageChanges: result.rows,
+      stageAnalysis: stageAnalysis.rows
+    });
 
   } catch (error) {
     console.error('Database error:', error);

@@ -218,8 +218,17 @@ export const fetchRealData = async (startDate, endDate, businessDays) => {
       throw new Error(`API error: ${response.status}`);
     }
     
-    const stageChanges = await response.json();
+    const responseData = await response.json();
+    
+    // Handle new response format with stage analysis
+    const stageChanges = responseData.stageChanges || responseData; // Fallback for backward compatibility
+    const stageAnalysis = responseData.stageAnalysis || [];
+    
     console.log(`Fetched ${stageChanges.length} stage changes from API`);
+    console.log('🔍 STAGE ANALYSIS - All stage transitions in selected period:');
+    stageAnalysis.forEach(analysis => {
+      console.log(`  ${analysis.stage_from || 'NULL'} → ${analysis.stage_to}: ${analysis.count} times`);
+    });
     
     return processSupabaseData(stageChanges, startDate, endDate, businessDays);
     
