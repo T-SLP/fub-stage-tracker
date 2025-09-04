@@ -134,7 +134,19 @@ const isThrowawayLead = (change) => {
     'ACQ - Dead/DNC'
   ];
   
-  return qualifiedStages.includes(change.stage_from) && throwawayStages.includes(change.stage_to);
+  const isThrowaway = qualifiedStages.includes(change.stage_from) && throwawayStages.includes(change.stage_to);
+  
+  // Debug logging for throwaway leads
+  if (isThrowaway) {
+    console.log('🗑️ Throwaway lead detected:', {
+      from: change.stage_from,
+      to: change.stage_to,
+      person: `${change.first_name} ${change.last_name}`,
+      date: change.changed_at
+    });
+  }
+  
+  return isThrowaway;
 };
 
 // Calculate pipeline velocity - average days from ACQ - Qualified to ACQ - Under Contract
@@ -239,6 +251,15 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       })
     });
   }
+
+  // Debug: Log unique stage transitions to understand data structure
+  const stageTransitions = new Set();
+  stageChanges.forEach(change => {
+    if (change.stage_from && change.stage_to) {
+      stageTransitions.add(`${change.stage_from} → ${change.stage_to}`);
+    }
+  });
+  console.log('📊 Unique stage transitions in data:', Array.from(stageTransitions).slice(0, 10));
 
   // Count stage changes by day and stage
   stageChanges.forEach(change => {
