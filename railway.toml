@@ -5,4 +5,4 @@ builder = "NIXPACKS"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
-workingDirectory = "webhook-server"
+startCommand = "cd webhook-server && python fub_webhook_server.py"
