@@ -925,6 +925,61 @@ def system_stats():
     })
 
 
+@app.route('/test-db', methods=['GET'])
+def test_database():
+    """Test database connectivity and show recent activity"""
+    try:
+        conn = processor.get_connection()
+        with conn.cursor() as cur:
+            # Test basic connectivity
+            cur.execute("SELECT COUNT(*) FROM stage_changes")
+            total_records = cur.fetchone()[0]
+            
+            # Get recent activity by source
+            cur.execute("""
+                SELECT source, COUNT(*) as count, MAX(received_at) as latest
+                FROM stage_changes 
+                WHERE received_at >= NOW() - INTERVAL '24 hours'
+                GROUP BY source 
+                ORDER BY count DESC
+            """)
+            recent_activity = cur.fetchall()
+            
+            # Get overall stats
+            cur.execute("""
+                SELECT 
+                    COUNT(*) as total_24h,
+                    COUNT(CASE WHEN received_at >= NOW() - INTERVAL '1 hour' THEN 1 END) as total_1h,
+                    MAX(received_at) as latest_record
+                FROM stage_changes 
+                WHERE received_at >= NOW() - INTERVAL '24 hours'
+            """)
+            stats = cur.fetchone()
+            
+        conn.close()
+        
+        return jsonify({
+            'database_status': 'connected',
+            'total_records': total_records,
+            'last_24_hours': {
+                'total_records': stats[0],
+                'last_hour': stats[1], 
+                'latest_record': stats[2].isoformat() if stats[2] else None
+            },
+            'activity_by_source': [
+                {'source': row[0], 'count': row[1], 'latest': row[2].isoformat() if row[2] else None}
+                for row in recent_activity
+            ]
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'database_status': 'error',
+            'error': str(e),
+            'message': 'Database connection failed'
+        }), 500
+
+
 if __name__ == '__main__':
     """Development server - Railway will use gunicorn in production"""
     app.run(host='0.0.0.0', port=WEBHOOK_PORT, debug=False)
