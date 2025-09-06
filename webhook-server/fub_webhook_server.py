@@ -402,16 +402,27 @@ class WebhookProcessor:
             return False
 
     def fetch_fub_resource(self, resource_uri):
-        """Fetch person data from FUB API using shared client"""
+        """Fetch person data from FUB API with custom fields"""
         try:
-            # Use shared FUB API client
-            person_id = resource_uri.split('/')[-1] if '/' in resource_uri else None
-            if person_id:
-                person_data = fub_api.get_person(person_id, include_custom_fields=True)
-                return {'people': [person_data]} if person_data else None
+            # Add fields=allFields to get custom fields
+            separator = '&' if '?' in resource_uri else '?'
+            full_uri = f"{resource_uri}{separator}fields=allFields"
+
+            headers = {
+                "Authorization": f"Basic {base64.b64encode(f'{FUB_API_KEY}:'.encode()).decode()}",
+                "X-System": "SynergyFUBLeadMetrics"
+            }
+
+            if FUB_SYSTEM_KEY:
+                headers["X-System-Key"] = FUB_SYSTEM_KEY
+
+            response = requests.get(full_uri, headers=headers, timeout=30)
+            if response.status_code == 200:
+                return response.json()
             else:
-                logger.error(f"Could not extract person ID from URI: {resource_uri}")
+                logger.error(f"Failed to fetch FUB resource: {response.status_code} - {response.text}")
                 return None
+
         except Exception as e:
             logger.error(f"Error fetching FUB resource: {e}")
             return None
