@@ -1,0 +1,22 @@
+{
+  "buildCommand": "cd dashboard && npm run build",
+  "outputDirectory": "dashboard/.next",
+  "installCommand": "cd dashboard && npm install",
+  "framework": "nextjs",
+  "functions": {
+    "dashboard/pages/api/webhook.js": {
+      "maxDuration": 30
+    },
+    "dashboard/pages/api/webhook-health.js": {
+      "maxDuration": 10
+    },
+    "dashboard/pages/api/pipeline-data.js": {
+      "maxDuration": 30
+    }
+  },
+  "env": {
+    "FUB_API_KEY": "@fub_api_key",
+    "SUPABASE_DB_URL": "@supabase_db_url", 
+    "FUB_SYSTEM_KEY": "@fub_system_key"
+  }
+}
