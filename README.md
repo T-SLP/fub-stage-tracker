@@ -15,10 +15,10 @@ Comprehensive Follow Up Boss stage tracking system with real-time webhooks and a
 
 ## Architecture
 
-- **Dashboard**: Next.js application with React components
-- **Webhook Server**: Integrated API routes for real-time FUB webhooks
+- **Dashboard**: Next.js application with React components (Vercel)
+- **Webhook Server**: Railway persistent server for real-time FUB webhooks  
 - **Database**: Supabase PostgreSQL for data storage
-- **Deployment**: Vercel serverless functions
+- **Deployment**: Hybrid - Vercel for dashboard, Railway for webhooks
 
 ## Project Structure
 
@@ -40,9 +40,13 @@ fub-stage-tracker/
 
 ## API Endpoints
 
-- **POST /api/webhook** - FUB webhook handler for real-time stage changes
-- **GET /api/webhook-health** - Webhook system health check
+### Dashboard (Vercel)
 - **POST /api/pipeline-data** - Dashboard analytics data
+
+### Webhook Server (Railway) 
+- **POST /webhook/fub/stage-change** - FUB webhook handler for real-time stage changes
+- **GET /health** - Webhook system health check
+- **GET /stats** - Webhook system statistics
 
 ## Environment Variables
 
