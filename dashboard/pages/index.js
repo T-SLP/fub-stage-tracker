@@ -91,7 +91,7 @@ const Dashboard = () => {
       
       try {
         const { start, end } = getDateRange('main', timeRange, customStartDate, customEndDate, campaignTimeRange, campaignCustomStartDate, campaignCustomEndDate, leadSourceTimeRange, leadSourceCustomStartDate, leadSourceCustomEndDate);
-        console.log('📅 Date range calculated:', { timeRange, start: start.toISOString().split('T')[0], end: end.toISOString().split('T')[0] });
+        console.log('📅 Date range:', timeRange);
         const businessDays = getBusinessDays(start, end);
         const realData = await fetchRealData(start, end, businessDays);
         

@@ -198,7 +198,7 @@ const calculatePipelineVelocity = (stageChanges) => {
 
 // Fetch real data from API
 export const fetchRealData = async (startDate, endDate, businessDays) => {
-  console.log('🚀 fetchRealData called with:', { startDate, endDate, businessDays });
+  console.log('🚀 fetchRealData called');
   try {
     const startDateStr = startDate.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
@@ -358,13 +358,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       const isInDateRange = changeDate >= currentWeekStart && changeDate <= today;
       
       if (isOfferStage) {
-        console.log(`🎯 OFFER FOUND: ${change.first_name} ${change.last_name}`);
-        console.log(`  - Change date: ${changeDate.toISOString()}`);
-        console.log(`  - Week start: ${currentWeekStart.toISOString()}`);
-        console.log(`  - Today: ${today.toISOString()}`);
-        console.log(`  - In range: ${isInDateRange}`);
-        console.log(`  - changeDate >= currentWeekStart: ${changeDate >= currentWeekStart}`);
-        console.log(`  - changeDate <= today: ${changeDate <= today}`);
+        console.log(`🎯 OFFER FOUND: ${change.first_name} ${change.last_name} - In range: ${isInDateRange}`);
       }
       
       return isInDateRange && isOfferStage;
