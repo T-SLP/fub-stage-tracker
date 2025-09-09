@@ -281,6 +281,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       if (change.stage_to === 'ACQ - Qualified') {
         dayData.qualified++;
       } else if (change.stage_to === 'ACQ - Offers Made') {
+        console.log(`📅 Adding offer to daily bucket: ${change.first_name} ${change.last_name} on ${changeDate}`);
         dayData.offers++;
       } else if (change.stage_to === 'ACQ - Price Motivated') {
         dayData.priceMotivated++;
@@ -324,6 +325,10 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   const offersTotal = dailyData.reduce((sum, day) => sum + day.offers, 0);
   const priceMotivatedTotal = dailyData.reduce((sum, day) => sum + day.priceMotivated, 0);
   const throwawayTotal = dailyData.reduce((sum, day) => sum + day.throwawayLeads, 0);
+  
+  console.log('📊 TOTALS CALCULATED:');
+  console.log(`  - offersTotal (from daily buckets): ${offersTotal}`);
+  console.log(`  - offersThisWeek (from weekly calculation): ${offersThisWeek}`);
   
   // Week comparisons - always calculate based on actual current date for consistency
   const today = new Date();
