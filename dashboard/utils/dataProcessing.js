@@ -232,6 +232,14 @@ export const fetchRealData = async (startDate, endDate, businessDays) => {
       console.log(`  ${analysis.stage_from || 'NULL'} → ${analysis.stage_to}: ${analysis.count} times`);
     });
     
+    // Debug: Find ALL transitions to "ACQ - Offers Made" with names
+    console.log('\n🎯 ALL OFFERS MADE TRANSITIONS:');
+    const offersTransitions = stageChanges.filter(change => change.stage_to === 'ACQ - Offers Made');
+    console.log(`Found ${offersTransitions.length} total transitions to "ACQ - Offers Made"`);
+    offersTransitions.forEach((offer, index) => {
+      console.log(`  ${index + 1}. ${offer.first_name} ${offer.last_name} - ${offer.changed_at} (from: ${offer.stage_from})`);
+    });
+    
     return processSupabaseData(stageChanges, startDate, endDate, businessDays);
     
   } catch (error) {
