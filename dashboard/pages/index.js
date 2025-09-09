@@ -91,12 +91,14 @@ const Dashboard = () => {
       
       try {
         const { start, end } = getDateRange('main', timeRange, customStartDate, customEndDate, campaignTimeRange, campaignCustomStartDate, campaignCustomEndDate, leadSourceTimeRange, leadSourceCustomStartDate, leadSourceCustomEndDate);
+        console.log('📅 Date range calculated:', { timeRange, start: start.toISOString().split('T')[0], end: end.toISOString().split('T')[0] });
         const businessDays = getBusinessDays(start, end);
         const realData = await fetchRealData(start, end, businessDays);
         
         setData(realData);
       } catch (error) {
-        console.error('Error fetching data:', error);
+        console.error('ERROR HANDLER TRIGGERED - This is why offers are showing as 0:', error);
+        console.error('Error details:', error.message, error.stack);
         setError('Failed to load pipeline data. Please check your connection and try again.');
         
         // Set empty data on error

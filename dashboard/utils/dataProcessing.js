@@ -198,11 +198,13 @@ const calculatePipelineVelocity = (stageChanges) => {
 
 // Fetch real data from API
 export const fetchRealData = async (startDate, endDate, businessDays) => {
+  console.log('🚀 fetchRealData called with:', { startDate, endDate, businessDays });
   try {
     const startDateStr = startDate.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
     
     // Call our API endpoint
+    console.log('📡 Making API call with dates:', { startDateStr, endDateStr });
     const response = await fetch('/api/pipeline-data', {
       method: 'POST',
       headers: {
@@ -233,7 +235,8 @@ export const fetchRealData = async (startDate, endDate, businessDays) => {
     return processSupabaseData(stageChanges, startDate, endDate, businessDays);
     
   } catch (error) {
-    console.error('Error fetching real data:', error);
+    console.error('💥 ERROR in fetchRealData - This will trigger the error handler that resets offers to 0:', error);
+    console.error('Error details:', error.message, error.stack);
     throw error;
   }
 };
@@ -324,7 +327,11 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   
   // Week comparisons - always calculate based on actual current date for consistency
   const today = new Date();
-  const currentWeekStart = getWeekStart(today);
+  // Set today to end of day to include all changes that happened today
+  today.setHours(23, 59, 59, 999);
+  const currentWeekStart = getWeekStart(new Date());
+  // Set week start to beginning of day
+  currentWeekStart.setHours(0, 0, 0, 0);
   const lastWeekStart = new Date(currentWeekStart);
   lastWeekStart.setDate(lastWeekStart.getDate() - 7);
   const lastWeekEnd = new Date(currentWeekStart);
@@ -347,7 +354,20 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   const offersThisWeekData = allStageChanges
     .filter(change => {
       const changeDate = new Date(change.changed_at);
-      return changeDate >= currentWeekStart && changeDate <= today && change.stage_to === 'ACQ - Offers Made';
+      const isOfferStage = change.stage_to === 'ACQ - Offers Made';
+      const isInDateRange = changeDate >= currentWeekStart && changeDate <= today;
+      
+      if (isOfferStage) {
+        console.log(`🎯 OFFER FOUND: ${change.first_name} ${change.last_name}`);
+        console.log(`  - Change date: ${changeDate.toISOString()}`);
+        console.log(`  - Week start: ${currentWeekStart.toISOString()}`);
+        console.log(`  - Today: ${today.toISOString()}`);
+        console.log(`  - In range: ${isInDateRange}`);
+        console.log(`  - changeDate >= currentWeekStart: ${changeDate >= currentWeekStart}`);
+        console.log(`  - changeDate <= today: ${changeDate <= today}`);
+      }
+      
+      return isInDateRange && isOfferStage;
     });
   offersThisWeek = offersThisWeekData.length;
   
