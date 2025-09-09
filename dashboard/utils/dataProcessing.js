@@ -277,6 +277,15 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   stageChanges.forEach(change => {
     const changeDate = new Date(change.changed_at).toISOString().split('T')[0];
     const dayData = dailyData.find(d => d.date === changeDate);
+    
+    // Debug for Kathryn Bishop's offer specifically
+    if (change.stage_to === 'ACQ - Offers Made' && change.first_name === 'Kathryn') {
+      console.log(`🔍 DAILY BUCKET DEBUG - Kathryn Bishop:`);
+      console.log(`  - changeDate: ${changeDate}`);
+      console.log(`  - available dates in dailyData: [${dailyData.map(d => d.date).join(', ')}]`);
+      console.log(`  - dayData found: ${dayData ? 'YES' : 'NO'}`);
+    }
+    
     if (dayData) {
       if (change.stage_to === 'ACQ - Qualified') {
         dayData.qualified++;
