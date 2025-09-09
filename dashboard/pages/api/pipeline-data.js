@@ -66,10 +66,27 @@ export default async function handler(req, res) {
 
     await client.end();
 
+    // Add debug info for offers made this week
+    const offersThisWeek = result.rows.filter(change => 
+      change.stage_to === 'ACQ - Offers Made'
+    );
+    
+    console.log(`API DEBUG - Date range: ${startDate} to ${endDate}`);
+    console.log(`API DEBUG - Total stage changes: ${result.rows.length}`);
+    console.log(`API DEBUG - Offers made in period: ${offersThisWeek.length}`);
+    offersThisWeek.forEach(offer => {
+      console.log(`  - ${offer.changed_at}: ${offer.first_name} ${offer.last_name}`);
+    });
+
     // Include stage analysis in response for debugging
     res.status(200).json({
       stageChanges: result.rows,
-      stageAnalysis: stageAnalysis.rows
+      stageAnalysis: stageAnalysis.rows,
+      debug: {
+        dateRange: `${startDate} to ${endDate}`,
+        totalChanges: result.rows.length,
+        offersInPeriod: offersThisWeek.length
+      }
     });
 
   } catch (error) {

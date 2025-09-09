@@ -344,11 +344,20 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       return changeDate >= currentWeekStart && changeDate <= today && change.stage_to === 'ACQ - Qualified';
     }).length;
   
-  offersThisWeek = allStageChanges
+  const offersThisWeekData = allStageChanges
     .filter(change => {
       const changeDate = new Date(change.changed_at);
       return changeDate >= currentWeekStart && changeDate <= today && change.stage_to === 'ACQ - Offers Made';
-    }).length;
+    });
+  offersThisWeek = offersThisWeekData.length;
+  
+  // Debug logging
+  console.log(`FRONTEND DEBUG - Current week: ${currentWeekStart.toISOString().split('T')[0]} to ${today.toISOString().split('T')[0]}`);
+  console.log(`FRONTEND DEBUG - Total stage changes received: ${allStageChanges.length}`);
+  console.log(`FRONTEND DEBUG - Offers this week calculated: ${offersThisWeek}`);
+  offersThisWeekData.forEach(offer => {
+    console.log(`  - ${offer.changed_at}: ${offer.first_name} ${offer.last_name}`);
+  });
   
   priceMotivatedThisWeek = allStageChanges
     .filter(change => {
