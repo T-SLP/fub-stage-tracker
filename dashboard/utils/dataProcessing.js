@@ -243,7 +243,8 @@ export const fetchRealData = async (startDate, endDate, businessDays) => {
 
 // Process Supabase data into dashboard format
 export const processSupabaseData = (stageChanges, startDate, endDate, businessDays) => {
-  const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+  // Calculate total days inclusive of both start and end dates
+  const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
   
   // Create daily buckets (including weekends for charts)
   const dailyData = [];
@@ -263,6 +264,9 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       })
     });
   }
+  
+  console.log(`🗓️  DAILY BUCKETS CREATED: ${dailyData.map(d => d.date).join(', ')}`);
+  console.log(`📅 Date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]} (${totalDays} days)`);
 
   // Debug: Log unique stage transitions to understand data structure
   const stageTransitions = new Set();
