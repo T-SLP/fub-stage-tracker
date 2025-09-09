@@ -1,6 +1,8 @@
 {
-  "buildCommand": "cd dashboard && npm run build",
-  "outputDirectory": "dashboard/.next",
-  "installCommand": "cd dashboard && npm install",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "functions": {
+    "pages/api/**/*.js": {
+      "maxDuration": 30
+    }
+  }
 }
