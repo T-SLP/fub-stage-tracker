@@ -2,6 +2,8 @@
 
 Comprehensive Follow Up Boss stage tracking system with real-time webhooks and analytics dashboard.
 
+**🚀 Updated with integrated webhook server - Single Vercel deployment!**
+
 ## Features
 
 - **Real-time Stage Tracking**: Webhook-based capture of stage changes
