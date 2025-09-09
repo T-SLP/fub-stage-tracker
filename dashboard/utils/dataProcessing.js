@@ -328,7 +328,6 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   
   console.log('📊 TOTALS CALCULATED:');
   console.log(`  - offersTotal (from daily buckets): ${offersTotal}`);
-  console.log(`  - offersThisWeek (from weekly calculation): ${offersThisWeek}`);
   
   // Week comparisons - always calculate based on actual current date for consistency
   const today = new Date();
@@ -377,6 +376,11 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   offersThisWeekData.forEach(offer => {
     console.log(`  - ${offer.changed_at}: ${offer.first_name} ${offer.last_name}`);
   });
+  
+  // COMPARISON DEBUG - Why is daily total 0 while weekly calculation shows 1?
+  console.log('🔍 COMPARISON DEBUG:');
+  console.log(`  - offersTotal (from daily buckets): ${offersTotal}`);
+  console.log(`  - offersThisWeek (from weekly calculation): ${offersThisWeek}`);
   
   priceMotivatedThisWeek = allStageChanges
     .filter(change => {
