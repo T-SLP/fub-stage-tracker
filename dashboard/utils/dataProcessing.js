@@ -240,6 +240,23 @@ export const fetchRealData = async (startDate, endDate, businessDays) => {
       console.log(`  ${index + 1}. ${offer.first_name} ${offer.last_name} - ${offer.changed_at} (from: ${offer.stage_from})`);
     });
     
+    // Debug: Search for specific known leads that moved to offers made today
+    console.log('\n🔍 SEARCHING FOR SPECIFIC KNOWN OFFERS:');
+    const knownOffers = ['Kathryn Bishop', 'Ricky Styles', 'Douglas Barbee'];
+    knownOffers.forEach(fullName => {
+      const [firstName, lastName] = fullName.split(' ');
+      const foundTransition = stageChanges.find(change => 
+        change.first_name === firstName && 
+        change.last_name === lastName && 
+        change.stage_to === 'ACQ - Offers Made'
+      );
+      if (foundTransition) {
+        console.log(`  ✅ ${fullName}: FOUND - ${foundTransition.changed_at} (from: ${foundTransition.stage_from})`);
+      } else {
+        console.log(`  ❌ ${fullName}: NOT FOUND in current data`);
+      }
+    });
+    
     return processSupabaseData(stageChanges, startDate, endDate, businessDays);
     
   } catch (error) {
