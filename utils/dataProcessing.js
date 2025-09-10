@@ -1,11 +1,22 @@
 // utils/dataProcessing.js - Complete data processing functions
 
-// Helper function to get week start (Sunday)
+// Helper function to convert any date to Eastern Time
+export const toEasternTime = (date) => {
+  return new Date(date.toLocaleString("en-US", {timeZone: "America/New_York"}));
+};
+
+// Helper function to format date in Eastern Time as YYYY-MM-DD
+export const formatEasternDate = (date) => {
+  const easternDate = toEasternTime(new Date(date));
+  return `${easternDate.getFullYear()}-${String(easternDate.getMonth() + 1).padStart(2, '0')}-${String(easternDate.getDate()).padStart(2, '0')}`;
+};
+
+// Helper function to get week start (Sunday) in Eastern Time
 export const getWeekStart = (date) => {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day;
-  return new Date(d.setDate(diff));
+  const easternDate = toEasternTime(new Date(date));
+  const day = easternDate.getDay();
+  const diff = easternDate.getDate() - day;
+  return new Date(easternDate.setDate(diff));
 };
 
 // Helper function to get date range
@@ -250,8 +261,9 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     const date = new Date(startDate);
     date.setDate(date.getDate() + i);
     
-    // Use local date formatting consistently (no timezone conversion)
-    const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    // Use Eastern Time consistently for all date operations
+    const dateKey = formatEasternDate(date);
+    const easternDate = toEasternTime(date);
     
     dailyData.push({
       date: dateKey,
@@ -259,11 +271,12 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       offers: 0,
       priceMotivated: 0,
       throwawayLeads: 0,
-      // Use local date object for display formatting
-      dateFormatted: date.toLocaleDateString('en-US', { 
+      // Use Eastern Time for display formatting
+      dateFormatted: easternDate.toLocaleDateString('en-US', { 
         month: 'short', 
         day: 'numeric',
-        weekday: 'short'
+        weekday: 'short',
+        timeZone: 'America/New_York'
       })
     });
   }
@@ -279,10 +292,8 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
 
   // Count stage changes by day and stage
   stageChanges.forEach(change => {
-    // Fix: Use local date instead of ISO conversion to avoid timezone shifts
-    // This prevents late evening events from being shifted to the next day
-    const localDate = new Date(change.changed_at);
-    const changeDate = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')}`;
+    // Use Eastern Time consistently - all events are processed in ET regardless of server timezone
+    const changeDate = formatEasternDate(change.changed_at);
     const dayData = dailyData.find(d => d.date === changeDate);
     if (dayData) {
       if (change.stage_to === 'ACQ - Qualified') {
@@ -332,9 +343,9 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   const priceMotivatedTotal = dailyData.reduce((sum, day) => sum + day.priceMotivated, 0);
   const throwawayTotal = dailyData.reduce((sum, day) => sum + day.throwawayLeads, 0);
   
-  // Week comparisons - always calculate based on actual current date for consistency
-  const today = new Date();
-  const currentWeekStart = getWeekStart(today);
+  // Week comparisons - always calculate based on Eastern Time for consistency
+  const todayET = toEasternTime(new Date());
+  const currentWeekStart = getWeekStart(todayET);
   const lastWeekStart = new Date(currentWeekStart);
   lastWeekStart.setDate(lastWeekStart.getDate() - 7);
   const lastWeekEnd = new Date(currentWeekStart);
@@ -347,41 +358,41 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   // Calculate week comparisons (simplified for this utility function)
   const allStageChanges = stageChanges;
   
-  // Calculate current week totals
+  // Calculate current week totals using Eastern Time
   qualifiedThisWeek = allStageChanges
     .filter(change => {
-      const changeDate = new Date(change.changed_at);
-      return changeDate >= currentWeekStart && changeDate <= today && change.stage_to === 'ACQ - Qualified';
+      const changeDate = toEasternTime(new Date(change.changed_at));
+      return changeDate >= currentWeekStart && changeDate <= todayET && change.stage_to === 'ACQ - Qualified';
     }).length;
   
   offersThisWeek = allStageChanges
     .filter(change => {
-      const changeDate = new Date(change.changed_at);
-      return changeDate >= currentWeekStart && changeDate <= today && change.stage_to === 'ACQ - Offers Made';
+      const changeDate = toEasternTime(new Date(change.changed_at));
+      return changeDate >= currentWeekStart && changeDate <= todayET && change.stage_to === 'ACQ - Offers Made';
     }).length;
   
   priceMotivatedThisWeek = allStageChanges
     .filter(change => {
-      const changeDate = new Date(change.changed_at);
-      return changeDate >= currentWeekStart && changeDate <= today && change.stage_to === 'ACQ - Price Motivated';
+      const changeDate = toEasternTime(new Date(change.changed_at));
+      return changeDate >= currentWeekStart && changeDate <= todayET && change.stage_to === 'ACQ - Price Motivated';
     }).length;
   
-  // Calculate last week totals
+  // Calculate last week totals using Eastern Time
   qualifiedLastWeek = allStageChanges
     .filter(change => {
-      const changeDate = new Date(change.changed_at);
+      const changeDate = toEasternTime(new Date(change.changed_at));
       return changeDate >= lastWeekStart && changeDate <= lastWeekEnd && change.stage_to === 'ACQ - Qualified';
     }).length;
   
   offersLastWeek = allStageChanges
     .filter(change => {
-      const changeDate = new Date(change.changed_at);
+      const changeDate = toEasternTime(new Date(change.changed_at));
       return changeDate >= lastWeekStart && changeDate <= lastWeekEnd && change.stage_to === 'ACQ - Offers Made';
     }).length;
   
   priceMotivatedLastWeek = allStageChanges
     .filter(change => {
-      const changeDate = new Date(change.changed_at);
+      const changeDate = toEasternTime(new Date(change.changed_at));
       return changeDate >= lastWeekStart && changeDate <= lastWeekEnd && change.stage_to === 'ACQ - Price Motivated';
     }).length;
 
