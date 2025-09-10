@@ -240,20 +240,27 @@ export const fetchRealData = async (startDate, endDate, businessDays) => {
 
 // Process Supabase data into dashboard format
 export const processSupabaseData = (stageChanges, startDate, endDate, businessDays) => {
-  const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+  // Fix: Ensure we include the endDate by adding 1 to totalDays calculation
+  // This prevents the current day from being excluded when endDate is "today"
+  const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
   
   // Create daily buckets (including weekends for charts)
   const dailyData = [];
   for (let i = 0; i < totalDays; i++) {
     const date = new Date(startDate);
     date.setDate(date.getDate() + i);
+    
+    // Use consistent date formatting for both the key and display
+    const dateKey = date.toISOString().split('T')[0];
+    
     dailyData.push({
-      date: date.toISOString().split('T')[0],
+      date: dateKey,
       qualified: 0,
       offers: 0,
       priceMotivated: 0,
       throwawayLeads: 0,
-      dateFormatted: date.toLocaleDateString('en-US', { 
+      // Use the same date object for consistent formatting
+      dateFormatted: new Date(dateKey + 'T12:00:00').toLocaleDateString('en-US', { 
         month: 'short', 
         day: 'numeric',
         weekday: 'short'
@@ -272,7 +279,8 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
 
   // Count stage changes by day and stage
   stageChanges.forEach(change => {
-    const changeDate = new Date(change.changed_at).toISOString().split('T')[0];
+    // Use consistent date processing: extract date directly from timestamp
+    const changeDate = change.changed_at.toISOString().split('T')[0];
     const dayData = dailyData.find(d => d.date === changeDate);
     if (dayData) {
       if (change.stage_to === 'ACQ - Qualified') {
