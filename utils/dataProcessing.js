@@ -250,8 +250,8 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     const date = new Date(startDate);
     date.setDate(date.getDate() + i);
     
-    // Use consistent date formatting for both the key and display
-    const dateKey = date.toISOString().split('T')[0];
+    // Use local date formatting consistently (no timezone conversion)
+    const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     
     dailyData.push({
       date: dateKey,
@@ -259,8 +259,8 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       offers: 0,
       priceMotivated: 0,
       throwawayLeads: 0,
-      // Use the same date object for consistent formatting
-      dateFormatted: new Date(dateKey + 'T12:00:00').toLocaleDateString('en-US', { 
+      // Use local date object for display formatting
+      dateFormatted: date.toLocaleDateString('en-US', { 
         month: 'short', 
         day: 'numeric',
         weekday: 'short'
@@ -279,8 +279,10 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
 
   // Count stage changes by day and stage
   stageChanges.forEach(change => {
-    // Use consistent date processing: extract date directly from timestamp
-    const changeDate = change.changed_at.toISOString().split('T')[0];
+    // Fix: Use local date instead of ISO conversion to avoid timezone shifts
+    // This prevents late evening events from being shifted to the next day
+    const localDate = new Date(change.changed_at);
+    const changeDate = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')}`;
     const dayData = dailyData.find(d => d.date === changeDate);
     if (dayData) {
       if (change.stage_to === 'ACQ - Qualified') {
