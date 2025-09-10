@@ -445,27 +445,34 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       return changeDate >= lastWeekStart && changeDate <= lastWeekEnd && change.stage_to === 'ACQ - Price Motivated';
     }).length;
 
-  // Process recent activity (last 100, newest first) - only show bar chart stages + throwaway leads
-  const barChartStages = [
+  // Process recent activity (last 100, newest first) - show all important stage transitions
+  const importantStages = [
     'ACQ - Qualified',
     'ACQ - Offers Made', 
-    'ACQ - Price Motivated'
+    'ACQ - Price Motivated',
+    'Qualified Phase 2 - Day 3 to 2 Weeks',
+    'Qualified Phase 3 - 2 Weeks to 4 Weeks',
+    'ACQ - Under Contract',
+    'ACQ - Closed',
+    'ACQ - Not Interested',
+    'ACQ - Not Ready to Sell',
+    'ACQ - Dead / DNC'
   ];
   
-  console.log('📋 Activity table will show these stages + throwaway leads:', barChartStages);
+  console.log('📋 Activity table will show these stages + throwaway leads:', importantStages);
   
   const recentActivity = stageChanges
     .filter(change => {
-      // Show bar chart stages OR throwaway lead transitions
-      const isBarChartStage = barChartStages.includes(change.stage_to);
+      // Show important stages OR throwaway lead transitions
+      const isImportantStage = importantStages.includes(change.stage_to);
       const isThrowaway = isThrowawayLead(change);
       
       // Debug: log what's being filtered
-      if (!isBarChartStage && !isThrowaway) {
+      if (!isImportantStage && !isThrowaway) {
         console.log('🚫 Filtered out stage:', change.stage_to, 'from:', change.stage_from);
       }
       
-      return isBarChartStage || isThrowaway;
+      return isImportantStage || isThrowaway;
     })
     .slice(0, 100)
     .map(change => ({
