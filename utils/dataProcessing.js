@@ -292,6 +292,29 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
 
   // Count stage changes by day and stage
   stageChanges.forEach(change => {
+    // Filter out automated system/polling records that don't represent real business activity
+    // These are typically batch updates with midnight timestamps from automated processing
+    if (change.source === 'polling') {
+      const changeHour = new Date(change.changed_at).getHours();
+      const changeMinute = new Date(change.changed_at).getMinutes();
+      const changeSecond = new Date(change.changed_at).getSeconds();
+      
+      // Skip records that are likely automated batch processing:
+      // - Midnight timestamps (00:xx:xx)
+      // - Exact minute boundaries with seconds < 10 (suggests batch processing)
+      if (changeHour === 0 && changeMinute < 30) {
+        console.log(`🚫 Filtering out automated polling record: ${change.first_name} ${change.last_name} at ${change.changed_at}`);
+        return; // Skip this record
+      }
+      
+      // Additional check: if multiple records have identical timestamps (batch processing)
+      // This catches batch updates that happen at the same exact moment
+      if (changeSecond < 10 && changeMinute === 5) { // 00:05:0x pattern
+        console.log(`🚫 Filtering out batch polling record: ${change.first_name} ${change.last_name} at ${change.changed_at}`);
+        return; // Skip this record
+      }
+    }
+    
     // Use Eastern Time consistently - all events are processed in ET regardless of server timezone
     const changeDate = formatEasternDate(change.changed_at);
     const dayData = dailyData.find(d => d.date === changeDate);
@@ -407,6 +430,23 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   
   const recentActivity = stageChanges
     .filter(change => {
+      // Filter out automated system/polling records first
+      if (change.source === 'polling') {
+        const changeHour = new Date(change.changed_at).getHours();
+        const changeMinute = new Date(change.changed_at).getMinutes();
+        const changeSecond = new Date(change.changed_at).getSeconds();
+        
+        // Skip automated batch processing records
+        if (changeHour === 0 && changeMinute < 30) {
+          return false; // Skip automated records
+        }
+        
+        // Skip batch updates with identical timestamps
+        if (changeSecond < 10 && changeMinute === 5) { // 00:05:0x pattern
+          return false; // Skip batch records
+        }
+      }
+      
       // Show bar chart stages OR throwaway lead transitions
       const isBarChartStage = barChartStages.includes(change.stage_to);
       const isThrowaway = isThrowawayLead(change);
