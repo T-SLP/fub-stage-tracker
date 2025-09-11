@@ -282,7 +282,7 @@ const Dashboard = () => {
           <MetricCard
             icon={Clock}
             iconColor="text-orange-600"
-            title="Avg Time to Offer"
+            title="Time to Offer (30 day avg)"
             value={data.summary.avgTimeToOffer}
             subtitle="days from qualified"
           />

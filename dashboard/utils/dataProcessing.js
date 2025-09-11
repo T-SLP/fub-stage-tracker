@@ -153,6 +153,91 @@ const calculateAvgTimeToOffer = (stageChanges) => {
   return result;
 };
 
+// Calculate average time to offer using FIXED 30-day period for stable metric
+const calculateAvgTimeToOffer30Day = (stageChanges) => {
+  console.log('🔍 CALCULATING 30-DAY AVG TIME TO OFFER');
+  
+  // Always use last 30 days for offers, regardless of selected dashboard period
+  const today = new Date();
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(today.getDate() - 30);
+  
+  // Find all offers made in the last 30 days
+  const offersIn30Days = stageChanges.filter(change => {
+    const changeDate = new Date(change.changed_at);
+    return change.stage_to === 'ACQ - Offers Made' && 
+           changeDate >= thirtyDaysAgo && 
+           changeDate <= today;
+  });
+  
+  console.log(`Found ${offersIn30Days.length} offers made in last 30 days`);
+  
+  if (offersIn30Days.length === 0) {
+    return 0;
+  }
+  
+  // Group all stage changes by person_id to track individual lead journeys
+  const leadJourneys = {};
+  stageChanges.forEach(change => {
+    const personId = change.person_id;
+    if (!leadJourneys[personId]) {
+      leadJourneys[personId] = [];
+    }
+    leadJourneys[personId].push({
+      stage: change.stage_to,
+      timestamp: new Date(change.changed_at),
+      first_name: change.first_name,
+      last_name: change.last_name
+    });
+  });
+
+  const timesToOffer = [];
+  
+  // For each offer made in last 30 days, find their qualification time
+  offersIn30Days.forEach(offer => {
+    const personId = offer.person_id;
+    const journey = leadJourneys[personId] || [];
+    
+    // Sort by timestamp to ensure chronological order
+    journey.sort((a, b) => a.timestamp - b.timestamp);
+    
+    // Find the first time they entered Qualified stage
+    let qualifiedTime = null;
+    for (const stage of journey) {
+      if (stage.stage === 'ACQ - Qualified' && !qualifiedTime) {
+        qualifiedTime = stage.timestamp;
+        break;
+      }
+    }
+    
+    if (qualifiedTime) {
+      const offerTime = new Date(offer.changed_at);
+      const timeDiff = (offerTime - qualifiedTime) / (1000 * 60 * 60 * 24);
+      
+      if (timeDiff >= 0) { // Only count positive time differences
+        timesToOffer.push(timeDiff);
+        console.log(`✅ ${offer.first_name} ${offer.last_name}: ${Math.round(timeDiff * 10) / 10} days`);
+      }
+    } else {
+      console.log(`❌ ${offer.first_name} ${offer.last_name}: No qualification found (qualified before data range)`);
+    }
+  });
+
+  console.log(`📊 30-day avg calculated from ${timesToOffer.length} of ${offersIn30Days.length} offers`);
+  
+  // Calculate average
+  if (timesToOffer.length === 0) {
+    console.log('⚠️ No complete journeys found in 30-day period');
+    return 0;
+  }
+  
+  const avgDays = timesToOffer.reduce((sum, days) => sum + days, 0) / timesToOffer.length;
+  const result = Math.round(avgDays * 10) / 10;
+  
+  console.log(`📈 30-day Average Time to Offer: ${result} days (from ${timesToOffer.length} completed journeys)`);
+  return result;
+};
+
 // Check if a stage change represents a throwaway lead
 const isThrowawayLead = (change) => {
   const qualifiedStages = [
@@ -573,8 +658,8 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   const qualifiedToOfferRate = qualifiedTotal > 0 ? Math.round((offersTotal / qualifiedTotal) * 100) : 0;
   const qualifiedToPriceMotivatedRate = qualifiedTotal > 0 ? Math.round((priceMotivatedTotal / qualifiedTotal) * 100) : 0;
   
-  // Calculate real average time to offer (using extended approach)
-  const avgTimeToOffer = calculateAvgTimeToOffer(stageChanges);
+  // Calculate real average time to offer (always use 30-day period for stability)
+  const avgTimeToOffer = calculateAvgTimeToOffer30Day(stageChanges);
   
   // Calculate pipeline velocity - average days from Qualified to Under Contract
   const pipelineVelocity = calculatePipelineVelocity(stageChanges);
