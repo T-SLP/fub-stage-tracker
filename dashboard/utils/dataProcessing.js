@@ -753,7 +753,9 @@ export const fetchCampaignData = async (campaignTimeRange, campaignCustomStartDa
           start.setDate(start.getDate() - 90);
           break;
         default:
-          start.setDate(start.getDate() - 30);
+          // Default to current week, not 30 days
+          const defaultWeekStart = getWeekStart(end);
+          start = defaultWeekStart;
       }
     }
 
@@ -834,7 +836,9 @@ export const fetchLeadSourceData = async (leadSourceTimeRange, leadSourceCustomS
           start.setDate(start.getDate() - 90);
           break;
         default:
-          start.setDate(start.getDate() - 30);
+          // Default to current week, not 30 days
+          const defaultWeekStart = getWeekStart(end);
+          start = defaultWeekStart;
       }
     }
 
