@@ -478,7 +478,10 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
 
   // Count stage changes by day and stage (only for requested period)
   requestedPeriodChanges.forEach(change => {
-    const changeDate = new Date(change.changed_at).toISOString().split('T')[0];
+    // Convert to Eastern Time before extracting date to avoid timezone plotting issues
+    const changeDateTime = new Date(change.changed_at);
+    const easternDateTime = new Date(changeDateTime.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const changeDate = easternDateTime.toISOString().split('T')[0];
     const dayData = dailyData.find(d => d.date === changeDate);
     
     // Debug for Kathryn Bishop's offer specifically
