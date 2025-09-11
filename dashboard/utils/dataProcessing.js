@@ -480,8 +480,16 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   requestedPeriodChanges.forEach(change => {
     // Convert to Eastern Time before extracting date to avoid timezone plotting issues
     const changeDateTime = new Date(change.changed_at);
-    const easternDateTime = new Date(changeDateTime.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-    const changeDate = easternDateTime.toISOString().split('T')[0];
+    
+    // Use Intl.DateTimeFormat for more reliable timezone conversion
+    const easternDateStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(changeDateTime);
+    
+    const changeDate = easternDateStr; // Already in YYYY-MM-DD format
     const dayData = dailyData.find(d => d.date === changeDate);
     
     // Debug for Kathryn Bishop's offer specifically
