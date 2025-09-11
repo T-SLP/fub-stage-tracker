@@ -415,9 +415,28 @@ export const fetchRealData = async (startDate, endDate, businessDays) => {
 
 // Process Supabase data into dashboard format
 export const processSupabaseData = (stageChanges, startDate, endDate, businessDays) => {
+  // Filter out bulk import data (events with identical timestamps indicating artificial batch imports)
+  const timestampCounts = {};
+  stageChanges.forEach(change => {
+    timestampCounts[change.changed_at] = (timestampCounts[change.changed_at] || 0) + 1;
+  });
+  
+  const filteredStageChanges = stageChanges.filter(change => {
+    // Filter out timestamps that appear 50+ times (likely bulk import)
+    if (timestampCounts[change.changed_at] >= 50) {
+      return false;
+    }
+    return true;
+  });
+  
+  const filteredCount = stageChanges.length - filteredStageChanges.length;
+  if (filteredCount > 0) {
+    console.log(`🚨 Filtered out ${filteredCount} bulk import records with identical timestamps`);
+  }
+  
   // Filter stage changes to only include the requested period for charts/metrics
   // But keep all data for Time to Offer calculation
-  const requestedPeriodChanges = stageChanges.filter(change => {
+  const requestedPeriodChanges = filteredStageChanges.filter(change => {
     const changeDate = new Date(change.changed_at);
     return changeDate >= startDate && changeDate <= endDate;
   });
@@ -687,10 +706,10 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   const qualifiedToPriceMotivatedRate = qualifiedTotal > 0 ? Math.round((priceMotivatedTotal / qualifiedTotal) * 100) : 0;
   
   // Calculate real average time to offer (always use 30-day period for stability)
-  const avgTimeToOffer = calculateAvgTimeToOffer30Day(stageChanges);
+  const avgTimeToOffer = calculateAvgTimeToOffer30Day(filteredStageChanges);
   
   // Calculate pipeline velocity - average days from Qualified to Under Contract
-  const pipelineVelocity = calculatePipelineVelocity(stageChanges);
+  const pipelineVelocity = calculatePipelineVelocity(filteredStageChanges);
 
   return {
     dailyMetrics: dailyData,
