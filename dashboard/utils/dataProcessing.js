@@ -73,8 +73,22 @@ export const getBusinessDays = (startDate, endDate) => {
 };
 
 // Calculate average time from ACQ - Qualified to ACQ - Offers Made
+// Enhanced approach: Include ALL offers made in the period, regardless of when they were qualified
 const calculateAvgTimeToOffer = (stageChanges) => {
-  // Group stage changes by person_id to track individual lead journeys
+  console.log('🔍 CALCULATING AVG TIME TO OFFER (enhanced method)');
+  
+  // Find all offers made in the current period
+  const offersInPeriod = stageChanges.filter(change => 
+    change.stage_to === 'ACQ - Offers Made'
+  );
+  
+  console.log(`Found ${offersInPeriod.length} offers made in selected period`);
+  
+  if (offersInPeriod.length === 0) {
+    return 0;
+  }
+  
+  // Group all stage changes by person_id to track individual lead journeys
   const leadJourneys = {};
   
   stageChanges.forEach(change => {
@@ -84,39 +98,59 @@ const calculateAvgTimeToOffer = (stageChanges) => {
     }
     leadJourneys[personId].push({
       stage: change.stage_to,
-      timestamp: new Date(change.changed_at)
+      timestamp: new Date(change.changed_at),
+      first_name: change.first_name,
+      last_name: change.last_name
     });
   });
 
-  // Calculate time to offer for each lead that progressed from Qualified to Offers Made
   const timesToOffer = [];
   
-  Object.values(leadJourneys).forEach(journey => {
+  // For each offer made in the period, find their qualification time
+  offersInPeriod.forEach(offer => {
+    const personId = offer.person_id;
+    const journey = leadJourneys[personId] || [];
+    
     // Sort by timestamp to ensure chronological order
     journey.sort((a, b) => a.timestamp - b.timestamp);
     
+    // Find the first time they entered Qualified stage (anywhere in their journey)
     let qualifiedTime = null;
-    
     for (const stage of journey) {
       if (stage.stage === 'ACQ - Qualified' && !qualifiedTime) {
-        // Record the first time they entered Qualified stage
         qualifiedTime = stage.timestamp;
-      } else if (stage.stage === 'ACQ - Offers Made' && qualifiedTime) {
-        // Calculate time difference in days
-        const timeDiff = (stage.timestamp - qualifiedTime) / (1000 * 60 * 60 * 24);
-        timesToOffer.push(timeDiff);
-        break; // Only count the first transition to Offers Made
+        break;
       }
+    }
+    
+    if (qualifiedTime) {
+      const offerTime = new Date(offer.changed_at);
+      const timeDiff = (offerTime - qualifiedTime) / (1000 * 60 * 60 * 24);
+      
+      if (timeDiff >= 0) { // Only count positive time differences
+        timesToOffer.push(timeDiff);
+        console.log(`✅ ${offer.first_name} ${offer.last_name}: ${Math.round(timeDiff * 10) / 10} days`);
+      }
+    } else {
+      // NOTE: This means they were qualified outside the current data range
+      // For now, we'll exclude these, but ideally we'd query a longer period
+      console.log(`❌ ${offer.first_name} ${offer.last_name}: No qualification found in current data (likely qualified outside period)`);
     }
   });
 
+  console.log(`📊 Calculated times for ${timesToOffer.length} of ${offersInPeriod.length} offers`);
+  
   // Calculate average
   if (timesToOffer.length === 0) {
+    console.log('⚠️ No complete journeys found - consider extending date range for this metric');
     return 0;
   }
   
   const avgDays = timesToOffer.reduce((sum, days) => sum + days, 0) / timesToOffer.length;
-  return Math.round(avgDays * 10) / 10; // Round to 1 decimal place
+  const result = Math.round(avgDays * 10) / 10;
+  
+  console.log(`📈 Average time to offer: ${result} days (from ${timesToOffer.length} completed journeys)`);
+  return result;
 };
 
 // Check if a stage change represents a throwaway lead
@@ -268,6 +302,14 @@ export const fetchRealData = async (startDate, endDate, businessDays) => {
 
 // Process Supabase data into dashboard format
 export const processSupabaseData = (stageChanges, startDate, endDate, businessDays) => {
+  // Filter stage changes to only include the requested period for charts/metrics
+  // But keep all data for Time to Offer calculation
+  const requestedPeriodChanges = stageChanges.filter(change => {
+    const changeDate = new Date(change.changed_at);
+    return changeDate >= startDate && changeDate <= endDate;
+  });
+  
+  console.log(`📊 Total data: ${stageChanges.length} changes, Requested period: ${requestedPeriodChanges.length} changes`);
   // Calculate total days inclusive of both start and end dates
   const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
   
@@ -295,15 +337,15 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
 
   // Debug: Log unique stage transitions to understand data structure
   const stageTransitions = new Set();
-  stageChanges.forEach(change => {
+  requestedPeriodChanges.forEach(change => {
     if (change.stage_from && change.stage_to) {
       stageTransitions.add(`${change.stage_from} → ${change.stage_to}`);
     }
   });
-  console.log('📊 Unique stage transitions in data:', Array.from(stageTransitions).slice(0, 10));
+  console.log('📊 Unique stage transitions in requested period:', Array.from(stageTransitions).slice(0, 10));
 
-  // Count stage changes by day and stage
-  stageChanges.forEach(change => {
+  // Count stage changes by day and stage (only for requested period)
+  requestedPeriodChanges.forEach(change => {
     const changeDate = new Date(change.changed_at).toISOString().split('T')[0];
     const dayData = dailyData.find(d => d.date === changeDate);
     
@@ -383,8 +425,8 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   let offersThisWeek = 0, offersLastWeek = 0;
   let priceMotivatedThisWeek = 0, priceMotivatedLastWeek = 0;
 
-  // Calculate week comparisons (simplified for this utility function)
-  const allStageChanges = stageChanges;
+  // Calculate week comparisons (use filtered data for period-specific metrics)
+  const allStageChanges = requestedPeriodChanges;
   
   // Calculate current week totals
   qualifiedThisWeek = allStageChanges
@@ -454,7 +496,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   
   console.log('📋 Activity table will show these stages + throwaway leads:', barChartStages);
   
-  const recentActivity = stageChanges
+  const recentActivity = requestedPeriodChanges
     .filter(change => {
       // Show bar chart stages OR throwaway lead transitions
       const isBarChartStage = barChartStages.includes(change.stage_to);
@@ -478,20 +520,20 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       previous_stage: change.stage_from || 'Unknown'
     }));
 
-  // Get unique campaigns for filter dropdown
-  const availableCampaigns = [...new Set(stageChanges
+  // Get unique campaigns for filter dropdown (from requested period)
+  const availableCampaigns = [...new Set(requestedPeriodChanges
     .map(change => change.campaign_id)
     .filter(campaign => campaign && campaign !== null)
   )].sort();
 
   // Add "No Campaign" if some records don't have campaign_id
-  if (stageChanges.some(change => !change.campaign_id)) {
+  if (requestedPeriodChanges.some(change => !change.campaign_id)) {
     availableCampaigns.push('No Campaign');
   }
 
-  // Calculate campaign metrics
+  // Calculate campaign metrics (from requested period)
   const campaignCounts = {};
-  stageChanges.forEach(change => {
+  requestedPeriodChanges.forEach(change => {
     if (change.stage_to === 'ACQ - Qualified') {
       const campaign = change.campaign_id || 'No Campaign';
       campaignCounts[campaign] = (campaignCounts[campaign] || 0) + 1;
@@ -506,9 +548,9 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     leads: 0
   }));
 
-  // Calculate lead source metrics for initial load
+  // Calculate lead source metrics for initial load (from requested period)
   const leadSourceCounts = {};
-  stageChanges.forEach(change => {
+  requestedPeriodChanges.forEach(change => {
     if (change.stage_to === 'ACQ - Qualified') {
       const source = change.lead_source_tag || 'Unknown';
       leadSourceCounts[source] = (leadSourceCounts[source] || 0) + 1;
@@ -531,7 +573,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   const qualifiedToOfferRate = qualifiedTotal > 0 ? Math.round((offersTotal / qualifiedTotal) * 100) : 0;
   const qualifiedToPriceMotivatedRate = qualifiedTotal > 0 ? Math.round((priceMotivatedTotal / qualifiedTotal) * 100) : 0;
   
-  // Calculate real average time to offer
+  // Calculate real average time to offer (using extended approach)
   const avgTimeToOffer = calculateAvgTimeToOffer(stageChanges);
   
   // Calculate pipeline velocity - average days from Qualified to Under Contract

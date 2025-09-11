@@ -41,6 +41,11 @@ export default async function handler(req, res) {
       `${endDate}T23:59:59Z`
     ]);
 
+    // For Time to Offer calculation, we need a broader date range to capture qualifications
+    // Extend the start date by 60 days to capture more qualification events
+    const extendedStartDate = new Date(startDate);
+    extendedStartDate.setDate(extendedStartDate.getDate() - 60);
+    
     const query = `
       SELECT 
         id,
@@ -60,9 +65,11 @@ export default async function handler(req, res) {
     `;
 
     const result = await client.query(query, [
-      `${startDate}T00:00:00Z`,
+      `${extendedStartDate.toISOString().split('T')[0]}T00:00:00Z`,
       `${endDate}T23:59:59Z`
     ]);
+    
+    console.log(`API DEBUG - Extended date range for Time to Offer: ${extendedStartDate.toISOString().split('T')[0]} to ${endDate}`);
 
     await client.end();
 
