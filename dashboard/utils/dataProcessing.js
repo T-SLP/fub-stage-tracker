@@ -684,7 +684,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     availableCampaigns.push('No Campaign');
   }
 
-  // Calculate campaign metrics (from requested period)
+  // Calculate campaign metrics (from requested period) - MAIN DASHBOARD ONLY
   const campaignCounts = {};
   requestedPeriodChanges.forEach(change => {
     if (change.stage_to === 'ACQ - Qualified') {
@@ -693,6 +693,8 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     }
   });
 
+  console.log(`🏢 MAIN DASHBOARD Campaign metrics: ${Object.keys(campaignCounts).length} campaigns from requested period`);
+  
   const campaignMetrics = Object.entries(campaignCounts).map(([campaign, qualified]) => ({
     campaign,
     qualified,
