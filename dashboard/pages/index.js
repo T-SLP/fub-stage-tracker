@@ -290,7 +290,7 @@ const Dashboard = () => {
           <MetricCard
             icon={Zap}
             iconColor="text-purple-600"
-            title="Pipeline Velocity"
+            title="Pipeline Velocity (60 day avg)"
             value={data.summary.pipelineVelocity}
             subtitle="avg days qualified → contract"
           />

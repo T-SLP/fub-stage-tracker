@@ -268,11 +268,27 @@ const isThrowawayLead = (change) => {
   return isThrowaway;
 };
 
-// Calculate pipeline velocity - average days from ACQ - Qualified to ACQ - Under Contract
-const calculatePipelineVelocity = (stageChanges) => {
-  // Group stage changes by person_id to track individual lead journeys
-  const leadJourneys = {};
+// Calculate pipeline velocity - average days from ACQ - Qualified to ACQ - Under Contract (60 day avg)
+const calculatePipelineVelocity60Day = (stageChanges) => {
+  // Use fixed 60-day period for stable metric
+  const today = new Date();
+  const sixtyDaysAgo = new Date();
+  sixtyDaysAgo.setDate(today.getDate() - 60);
   
+  // Filter for Under Contract transitions in the 60-day period
+  const contractsIn60Days = stageChanges.filter(change => {
+    const changeDate = new Date(change.changed_at);
+    return change.stage_to === 'ACQ - Under Contract' && 
+           changeDate >= sixtyDaysAgo && 
+           changeDate <= today;
+  });
+  
+  if (contractsIn60Days.length === 0) {
+    return 0;
+  }
+  
+  // Group all stage changes by person_id to track individual lead journeys
+  const leadJourneys = {};
   stageChanges.forEach(change => {
     const personId = change.person_id;
     if (!leadJourneys[personId]) {
@@ -283,29 +299,36 @@ const calculatePipelineVelocity = (stageChanges) => {
       timestamp: new Date(change.changed_at)
     });
   });
-
-  // Calculate time to under contract for each lead that progressed from Qualified to Under Contract
+  
   const timesToContract = [];
   
-  Object.values(leadJourneys).forEach(journey => {
-    // Sort by timestamp to ensure chronological order
+  // For each Under Contract transition in 60-day period, find their qualification time
+  contractsIn60Days.forEach(contract => {
+    const personId = contract.person_id;
+    const journey = leadJourneys[personId] || [];
+    
+    // Sort by timestamp
     journey.sort((a, b) => a.timestamp - b.timestamp);
     
+    // Find first qualification
     let qualifiedTime = null;
-    
     for (const stage of journey) {
       if (stage.stage === 'ACQ - Qualified' && !qualifiedTime) {
-        // Record the first time they entered Qualified stage
         qualifiedTime = stage.timestamp;
-      } else if (stage.stage === 'ACQ - Under Contract' && qualifiedTime) {
-        // Calculate time difference in days
-        const timeDiff = (stage.timestamp - qualifiedTime) / (1000 * 60 * 60 * 24);
+        break;
+      }
+    }
+    
+    if (qualifiedTime) {
+      const contractTime = new Date(contract.changed_at);
+      const timeDiff = (contractTime - qualifiedTime) / (1000 * 60 * 60 * 24);
+      
+      if (timeDiff >= 0) {
         timesToContract.push(timeDiff);
-        break; // Only count the first transition to Under Contract
       }
     }
   });
-
+  
   // Calculate average
   if (timesToContract.length === 0) {
     return 0;
@@ -313,6 +336,11 @@ const calculatePipelineVelocity = (stageChanges) => {
   
   const avgDays = timesToContract.reduce((sum, days) => sum + days, 0) / timesToContract.length;
   return Math.round(avgDays * 10) / 10; // Round to 1 decimal place
+};
+
+// Legacy function - keep for compatibility but not used
+const calculatePipelineVelocity = (stageChanges) => {
+  return calculatePipelineVelocity60Day(stageChanges);
 };
 
 // Fetch real data from API
