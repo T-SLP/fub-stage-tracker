@@ -450,17 +450,27 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   for (let i = 0; i < totalDays; i++) {
     const date = new Date(startDate);
     date.setDate(date.getDate() + i);
+    
+    // Use Eastern Time for consistent date bucket creation
+    const easternDateStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(date);
+    
     dailyData.push({
-      date: date.toISOString().split('T')[0],
+      date: easternDateStr,
       qualified: 0,
       offers: 0,
       priceMotivated: 0,
       throwawayLeads: 0,
-      dateFormatted: date.toLocaleDateString('en-US', { 
+      dateFormatted: new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
         month: 'short', 
         day: 'numeric',
         weekday: 'short'
-      })
+      }).format(date)
     });
   }
   
