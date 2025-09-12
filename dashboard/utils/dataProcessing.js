@@ -684,7 +684,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     availableCampaigns.push('No Campaign');
   }
 
-  // Calculate campaign metrics (from requested period) - MAIN DASHBOARD ONLY
+  // Calculate campaign metrics (from requested period only) 
   const campaignCounts = {};
   requestedPeriodChanges.forEach(change => {
     if (change.stage_to === 'ACQ - Qualified') {
@@ -693,8 +693,6 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     }
   });
 
-  console.log(`🏢 MAIN DASHBOARD Campaign metrics: ${Object.keys(campaignCounts).length} campaigns from requested period`);
-  
   const campaignMetrics = Object.entries(campaignCounts).map(([campaign, qualified]) => ({
     campaign,
     qualified,
@@ -795,9 +793,8 @@ export const fetchCampaignData = async (campaignTimeRange, campaignCustomStartDa
           start.setDate(start.getDate() - 90);
           break;
         default:
-          // Default to current week, not 30 days
-          const defaultWeekStart = getWeekStart(end);
-          start = defaultWeekStart;
+          // Default to last 30 days
+          start.setDate(start.getDate() - 30);
       }
     }
 
@@ -822,9 +819,23 @@ export const fetchCampaignData = async (campaignTimeRange, campaignCustomStartDa
     const responseData = await response.json();
     const stageChanges = responseData.stageChanges || responseData; // Handle new format
     
-    // Calculate campaign metrics
+    // Filter stage changes to only include those within the requested date range
+    const filteredStageChanges = stageChanges.filter(change => {
+      const changeDate = new Date(change.changed_at);
+      const easternDateStr = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(changeDate);
+      
+      const easternDate = new Date(easternDateStr);
+      return easternDate >= start && easternDate <= end;
+    });
+    
+    // Calculate campaign metrics from filtered data
     const campaignCounts = {};
-    stageChanges.forEach(change => {
+    filteredStageChanges.forEach(change => {
       if (change.stage_to === 'ACQ - Qualified') {
         const campaign = change.campaign_id || 'No Campaign';
         campaignCounts[campaign] = (campaignCounts[campaign] || 0) + 1;
@@ -878,9 +889,8 @@ export const fetchLeadSourceData = async (leadSourceTimeRange, leadSourceCustomS
           start.setDate(start.getDate() - 90);
           break;
         default:
-          // Default to current week, not 30 days
-          const defaultWeekStart = getWeekStart(end);
-          start = defaultWeekStart;
+          // Default to last 30 days
+          start.setDate(start.getDate() - 30);
       }
     }
 
@@ -908,9 +918,23 @@ export const fetchLeadSourceData = async (leadSourceTimeRange, leadSourceCustomS
     const stageChanges = responseData.stageChanges || responseData; // Handle new format
     console.log('Lead source stage changes received:', stageChanges.length);
     
-    // Calculate lead source metrics for qualified leads only
+    // Filter stage changes to only include those within the requested date range
+    const filteredStageChanges = stageChanges.filter(change => {
+      const changeDate = new Date(change.changed_at);
+      const easternDateStr = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(changeDate);
+      
+      const easternDate = new Date(easternDateStr);
+      return easternDate >= start && easternDate <= end;
+    });
+    
+    // Calculate lead source metrics for qualified leads only from filtered data
     const leadSourceCounts = {};
-    stageChanges.forEach(change => {
+    filteredStageChanges.forEach(change => {
       if (change.stage_to === 'ACQ - Qualified') {
         const source = change.lead_source_tag || 'Unknown';
         leadSourceCounts[source] = (leadSourceCounts[source] || 0) + 1;
