@@ -1,1 +1,1 @@
-web: python fub_webhook_server.py
+web: python webhook-server/fub_webhook_server.py
