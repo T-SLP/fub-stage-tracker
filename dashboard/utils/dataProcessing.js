@@ -805,13 +805,25 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     item.percentage = leadSourceTotal > 0 ? Math.round((item.value / leadSourceTotal) * 100) : 0;
   });
 
+  // Calculate throwaway leads for the selected date range (reliable method)
+  // This counts all throwaway transitions within the requested period
+  const throwawayForDateRange = requestedPeriodChanges
+    .filter(change => isThrowawayLead(change))
+    .length;
+
+  console.log('🗑️ THROWAWAY CALCULATION COMPARISON:');
+  console.log(`  - throwawayTotal (daily buckets): ${throwawayTotal}`);
+  console.log(`  - throwawayForDateRange (direct count): ${throwawayForDateRange}`);
+  console.log(`  - throwawayThisWeek: ${throwawayThisWeek}`);
+  console.log(`  - throwawayLastWeek: ${throwawayLastWeek}`);
+
   // Calculate advanced metrics
   const qualifiedToOfferRate = qualifiedTotal > 0 ? Math.round((offersTotal / qualifiedTotal) * 100) : 0;
   const qualifiedToPriceMotivatedRate = qualifiedTotal > 0 ? Math.round((priceMotivatedTotal / qualifiedTotal) * 100) : 0;
-  
+
   // Calculate real average time to offer (always use 30-day period for stability)
   const avgTimeToOffer = calculateAvgTimeToOffer30Day(cleanedStageChanges);
-  
+
   // Calculate pipeline velocity - average days from Qualified to Under Contract
   const pipelineVelocity = calculatePipelineVelocity(cleanedStageChanges);
 
@@ -833,6 +845,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       throwawayTotal,
       throwawayThisWeek,
       throwawayLastWeek,
+      throwawayForDateRange,
       qualifiedAvgPerDay: businessDays > 0 ? Math.round((qualifiedTotal / businessDays) * 10) / 10 : 0,
       offersAvgPerDay: businessDays > 0 ? Math.round((offersTotal / businessDays) * 10) / 10 : 0,
       priceMotivatedAvgPerDay: businessDays > 0 ? Math.round((priceMotivatedTotal / businessDays) * 10) / 10 : 0,

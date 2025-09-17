@@ -86,13 +86,9 @@ const Dashboard = () => {
       case TIME_RANGES.LAST_WEEK:
         return data.summary.throwawayLastWeek || 0;
       default:
-        // For custom ranges and other cases, use the weekly calculation if available
-        // If it's a longer period, we should use the daily bucket total, but prefer weekly when available
-        return data.summary.throwawayLastWeek !== undefined && timeRange === TIME_RANGES.LAST_WEEK
-          ? data.summary.throwawayLastWeek
-          : data.summary.throwawayThisWeek !== undefined && timeRange === TIME_RANGES.CURRENT_WEEK
-          ? data.summary.throwawayThisWeek
-          : data.summary.throwawayTotal || 0;
+        // For longer time periods (30d, 90d, custom), use the reliable direct calculation
+        // from stage changes to avoid timezone issues with daily bucket totals
+        return data.summary.throwawayForDateRange || 0;
     }
   };
 
