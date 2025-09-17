@@ -1,1 +1,1 @@
-web: npm start
+web: python fub_webhook_server_deploy.py
