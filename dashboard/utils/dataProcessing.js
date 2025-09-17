@@ -519,7 +519,13 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       } else if (change.stage_to === 'ACQ - Price Motivated') {
         dayData.priceMotivated++;
       } else if (isThrowawayLead(change)) {
+        console.log(`🗑️ Adding throwaway lead to daily bucket: ${change.first_name} ${change.last_name} on ${changeDate} (bucket: ${dayData.date})`);
         dayData.throwawayLeads++;
+      }
+    } else {
+      // Log when a change doesn't have a matching day bucket
+      if (isThrowawayLead(change)) {
+        console.log(`❌ Throwaway lead EXCLUDED (no day bucket): ${change.first_name} ${change.last_name} on ${changeDate}`);
       }
     }
   });
@@ -554,13 +560,71 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   const weeklyData = Array.from(weeks.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
 
   // Calculate totals
-  const qualifiedTotal = dailyData.reduce((sum, day) => sum + day.qualified, 0);
-  const offersTotal = dailyData.reduce((sum, day) => sum + day.offers, 0);
-  const priceMotivatedTotal = dailyData.reduce((sum, day) => sum + day.priceMotivated, 0);
-  const throwawayTotal = dailyData.reduce((sum, day) => sum + day.throwawayLeads, 0);
-  
+  console.log('🧮 STARTING TOTALS CALCULATION');
+  console.log('🔍 dailyData structure check:', dailyData.length, 'days');
+
+  // Safe calculations with error handling
+  let qualifiedTotal = 0;
+  let offersTotal = 0;
+  let priceMotivatedTotal = 0;
+  let throwawayTotal = 0;
+
+  try {
+    qualifiedTotal = dailyData.reduce((sum, day) => sum + (day.qualified || 0), 0);
+    console.log('✅ qualifiedTotal calculated:', qualifiedTotal);
+  } catch (error) {
+    console.error('❌ Error calculating qualifiedTotal:', error);
+  }
+
+  try {
+    offersTotal = dailyData.reduce((sum, day) => sum + (day.offers || 0), 0);
+    console.log('✅ offersTotal calculated:', offersTotal);
+  } catch (error) {
+    console.error('❌ Error calculating offersTotal:', error);
+  }
+
+  try {
+    priceMotivatedTotal = dailyData.reduce((sum, day) => sum + (day.priceMotivated || 0), 0);
+    console.log('✅ priceMotivatedTotal calculated:', priceMotivatedTotal);
+  } catch (error) {
+    console.error('❌ Error calculating priceMotivatedTotal:', error);
+  }
+
+  try {
+    throwawayTotal = dailyData.reduce((sum, day) => sum + (day.throwawayLeads || 0), 0);
+    console.log('✅ throwawayTotal calculated:', throwawayTotal);
+  } catch (error) {
+    console.error('❌ Error calculating throwawayTotal:', error);
+  }
+
+  console.log('🧮 FINISHED CALCULATING TOTALS');
+
   console.log('📊 TOTALS CALCULATED:');
   console.log(`  - offersTotal (from daily buckets): ${offersTotal}`);
+
+  // Safe logging for throwawayTotal to prevent crashes
+  try {
+    console.log('🔍 DEBUG throwawayTotal:', throwawayTotal, typeof throwawayTotal);
+    console.log(`  - throwawayTotal (from daily buckets): ${throwawayTotal}`);
+  } catch (error) {
+    console.error('❌ Error logging throwawayTotal:', error);
+    console.log('🔍 throwawayTotal value:', throwawayTotal);
+  }
+
+  // Debug: Show daily breakdown for throwaway leads
+  try {
+    const dailyThrowawayBreakdown = dailyData.filter(day => day.throwawayLeads > 0);
+    if (dailyThrowawayBreakdown.length > 0) {
+      console.log('📅 Daily throwaway breakdown:');
+      dailyThrowawayBreakdown.forEach(day => {
+        console.log(`  ${day.date}: ${day.throwawayLeads} throwaway leads`);
+      });
+    } else {
+      console.log('📅 No daily throwaway breakdown - no days with throwaway leads found');
+    }
+  } catch (error) {
+    console.error('❌ Error in daily throwaway breakdown:', error);
+  }
   
   // Week comparisons - always calculate based on actual current date for consistency
   const today = new Date();
@@ -577,6 +641,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   let qualifiedThisWeek = 0, qualifiedLastWeek = 0;
   let offersThisWeek = 0, offersLastWeek = 0;
   let priceMotivatedThisWeek = 0, priceMotivatedLastWeek = 0;
+  let throwawayThisWeek = 0, throwawayLastWeek = 0;
 
   // Calculate week comparisons (use filtered data for period-specific metrics)
   const allStageChanges = requestedPeriodChanges;
@@ -620,6 +685,12 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       const changeDate = new Date(change.changed_at);
       return changeDate >= currentWeekStart && changeDate <= today && change.stage_to === 'ACQ - Price Motivated';
     }).length;
+
+  throwawayThisWeek = allStageChanges
+    .filter(change => {
+      const changeDate = new Date(change.changed_at);
+      return changeDate >= currentWeekStart && changeDate <= today && isThrowawayLead(change);
+    }).length;
   
   // Calculate last week totals
   qualifiedLastWeek = allStageChanges
@@ -639,6 +710,18 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       const changeDate = new Date(change.changed_at);
       return changeDate >= lastWeekStart && changeDate <= lastWeekEnd && change.stage_to === 'ACQ - Price Motivated';
     }).length;
+
+  throwawayLastWeek = allStageChanges
+    .filter(change => {
+      const changeDate = new Date(change.changed_at);
+      return changeDate >= lastWeekStart && changeDate <= lastWeekEnd && isThrowawayLead(change);
+    }).length;
+
+  // Debug logging for throwaway calculations
+  console.log(`🗑️ THROWAWAY WEEKLY CALCULATIONS:`);
+  console.log(`  - throwawayThisWeek: ${throwawayThisWeek}`);
+  console.log(`  - throwawayLastWeek: ${throwawayLastWeek}`);
+  console.log(`  - throwawayTotal (from daily buckets): ${throwawayTotal}`);
 
   // Process recent activity (last 100, newest first) - only show bar chart stages + throwaway leads
   const barChartStages = [
@@ -748,6 +831,8 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       priceMotivatedThisWeek,
       priceMotivatedLastWeek,
       throwawayTotal,
+      throwawayThisWeek,
+      throwawayLastWeek,
       qualifiedAvgPerDay: businessDays > 0 ? Math.round((qualifiedTotal / businessDays) * 10) / 10 : 0,
       offersAvgPerDay: businessDays > 0 ? Math.round((offersTotal / businessDays) * 10) / 10 : 0,
       priceMotivatedAvgPerDay: businessDays > 0 ? Math.round((priceMotivatedTotal / businessDays) * 10) / 10 : 0,
