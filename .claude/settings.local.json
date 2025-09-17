@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(curl:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(npm run dev:*)",
+      "Read(//c/Users/troge/Downloads/**)",
+      "Bash(git reset:*)",
+      "Bash(python:*)",
+      "Bash(find:*)",
+      "WebFetch(domain:railway.app)",
+      "WebFetch(domain:railway.com)",
+      "Read(//c/Users/troge/**)",
+      "WebFetch(domain:fub-stage-tracker-production.up.railway.app)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
