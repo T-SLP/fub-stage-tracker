@@ -1,1 +1,1 @@
-web: python fub_webhook_server_deploy.py
+web: python fub_webhook_server.py
