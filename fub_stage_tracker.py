@@ -296,7 +296,27 @@ class PerformanceOptimizedFUB:
 
                 # Extract custom fields
                 custom_fields = extract_custom_fields(person_data)
-                lead_source_tag = extract_lead_source_tag(person_data.get('tags'))
+
+                # Enhanced lead source extraction with debugging
+                tags = person_data.get('tags', [])
+                lead_source_tag = extract_lead_source_tag(tags)
+
+                # Debug logging for lead source extraction
+                person_name = f"{person_data.get('firstName', 'Unknown')} {person_data.get('lastName', 'Unknown')}"
+                if lead_source_tag:
+                    print(f"✅ Lead source extracted for {person_name}: {lead_source_tag} from tags: {tags}")
+                else:
+                    print(f"⚠️  No lead source found for {person_name}, tags: {tags}")
+                    # Try alternative locations for tags in webhook payload
+                    alt_tags = event_data.get('tags', []) or event.get('tags', [])
+                    if alt_tags:
+                        lead_source_tag = extract_lead_source_tag(alt_tags)
+                        if lead_source_tag:
+                            print(f"✅ Lead source found in alternative location: {lead_source_tag} from tags: {alt_tags}")
+                        else:
+                            print(f"❌ Still no lead source in alternative tags: {alt_tags}")
+                    else:
+                        print(f"❌ No tags found in any location for {person_name}")
 
                 # Parse created timestamp
                 created_str = event.get('created', '')
