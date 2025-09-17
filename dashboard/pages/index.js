@@ -48,16 +48,19 @@ const Dashboard = () => {
     dailyMetrics: [],
     weeklyMetrics: [],
     campaignMetrics: [],
-    summary: { 
-      qualifiedTotal: 0, 
-      qualifiedThisWeek: 0, 
+    summary: {
+      qualifiedTotal: 0,
+      qualifiedThisWeek: 0,
       qualifiedLastWeek: 0,
-      offersTotal: 0, 
-      offersThisWeek: 0, 
+      offersTotal: 0,
+      offersThisWeek: 0,
       offersLastWeek: 0,
       priceMotivatedTotal: 0,
       priceMotivatedThisWeek: 0,
       priceMotivatedLastWeek: 0,
+      throwawayTotal: 0,
+      throwawayThisWeek: 0,
+      throwawayLastWeek: 0,
       qualifiedAvgPerDay: 0,
       offersAvgPerDay: 0,
       priceMotivatedAvgPerDay: 0,
@@ -74,6 +77,24 @@ const Dashboard = () => {
 
   // Chart data calculation
   const chartData = chartType === CHART_TYPES.WEEKLY ? data.weeklyMetrics : data.dailyMetrics;
+
+  // Helper function to get correct throwaway value based on timeRange
+  const getThrowawayValue = () => {
+    switch (timeRange) {
+      case TIME_RANGES.CURRENT_WEEK:
+        return data.summary.throwawayThisWeek || 0;
+      case TIME_RANGES.LAST_WEEK:
+        return data.summary.throwawayLastWeek || 0;
+      default:
+        // For custom ranges and other cases, use the weekly calculation if available
+        // If it's a longer period, we should use the daily bucket total, but prefer weekly when available
+        return data.summary.throwawayLastWeek !== undefined && timeRange === TIME_RANGES.LAST_WEEK
+          ? data.summary.throwawayLastWeek
+          : data.summary.throwawayThisWeek !== undefined && timeRange === TIME_RANGES.CURRENT_WEEK
+          ? data.summary.throwawayThisWeek
+          : data.summary.throwawayTotal || 0;
+    }
+  };
 
   // Line toggle handler
   const handleLineToggle = (lineKey) => {
@@ -116,6 +137,9 @@ const Dashboard = () => {
             priceMotivatedTotal: 0,
             priceMotivatedThisWeek: 0,
             priceMotivatedLastWeek: 0,
+            throwawayTotal: 0,
+            throwawayThisWeek: 0,
+            throwawayLastWeek: 0,
             qualifiedAvgPerDay: 0,
             offersAvgPerDay: 0,
             priceMotivatedAvgPerDay: 0,
@@ -234,7 +258,7 @@ const Dashboard = () => {
             icon={Trash2}
             iconColor="text-red-600"
             title="Throwaway Leads"
-            value={data.summary.throwawayTotal}
+            value={getThrowawayValue()}
           />
         </div>
 
