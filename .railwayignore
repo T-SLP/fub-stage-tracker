@@ -1,0 +1,22 @@
+# Ignore Node.js dashboard components for Python webhook deployment
+node_modules/
+.next/
+dashboard/
+pages/
+webhook-server.js
+*.js
+*.json
+!requirements.txt
+!railway.json
+
+# Ignore other non-essential files
+.git/
+.claude/
+*.md
+!README.md
+
+# Keep only Python webhook server files
+# fub_webhook_server_deploy.py (main server)
+# requirements.txt (dependencies)
+# Procfile (start command)
+# nixpacks.toml (build config)
