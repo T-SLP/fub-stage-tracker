@@ -780,7 +780,8 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     leads: 0
   }));
 
-  // Calculate lead source metrics for initial load (from requested period)
+  // Calculate lead source metrics INTEGRATED with main data (no separate API call)
+  console.log('✅ USING INTEGRATED LEAD SOURCE CALCULATION - NOT separate API call');
   const leadSourceCounts = {};
   requestedPeriodChanges.forEach(change => {
     if (change.stage_to === 'ACQ - Qualified') {
@@ -802,12 +803,14 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   });
 
   // Debug: Compare lead source total vs main qualified total
-  console.log('🔍 LEAD SOURCE vs QUALIFIED TOTAL COMPARISON:');
+  console.log('🔍 LEAD SOURCE vs QUALIFIED TOTAL COMPARISON (v2):');
   console.log(`  - leadSourceTotal (direct count): ${leadSourceTotal}`);
   console.log(`  - qualifiedTotal (daily buckets): ${qualifiedTotal}`);
   console.log(`  - requestedPeriodChanges with ACQ-Qualified: ${requestedPeriodChanges.filter(c => c.stage_to === 'ACQ - Qualified').length}`);
+  console.log(`  - Lead source breakdown:`, leadSourceCounts);
   if (leadSourceTotal !== qualifiedTotal) {
     console.warn('⚠️  MISMATCH detected between lead source total and qualified total!');
+    console.warn('📊 This means the pie chart and main metric are using different data sources!');
   }
 
   // Calculate throwaway leads for the selected date range (reliable method)
