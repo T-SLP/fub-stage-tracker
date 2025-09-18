@@ -6,7 +6,7 @@ const CampaignPerformanceChart = ({ data }) => {
   return (
     <div className="bg-white rounded-lg shadow p-6 mb-8">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Qualified Leads by Campaign Code ✓</h3>
+        <h3 className="text-lg font-semibold text-gray-900">Qualified Leads by Campaign Code</h3>
         {/* PRODUCTION AUTO-DEPLOY: Final test */}
       </div>
       <ResponsiveContainer width="100%" height={400}>
