@@ -3,12 +3,10 @@ import { Users, Clock, Target, TrendingUp, Zap, Trash2 } from 'lucide-react';
 
 // Constants and Utils
 import { TIME_RANGES, CHART_TYPES } from '../utils/constants';
-import { 
-  getDateRange, 
-  getBusinessDays, 
-  fetchRealData, 
-  fetchCampaignData as fetchCampaignDataUtil, 
-  fetchLeadSourceData as fetchLeadSourceDataUtil 
+import {
+  getDateRange,
+  getBusinessDays,
+  fetchRealData
 } from '../utils/dataProcessing';
 
 // Components
@@ -36,28 +34,27 @@ const Dashboard = () => {
     priceMotivated: true,
     throwawayLeads: true
   });
-  const [campaignTimeRange, setCampaignTimeRange] = useState(TIME_RANGES.CURRENT_WEEK);
-  const [campaignCustomStartDate, setCampaignCustomStartDate] = useState('');
-  const [campaignCustomEndDate, setCampaignCustomEndDate] = useState('');
-  const [leadSourceTimeRange, setLeadSourceTimeRange] = useState(TIME_RANGES.CURRENT_WEEK);
-  const [leadSourceCustomStartDate, setLeadSourceCustomStartDate] = useState('');
-  const [leadSourceCustomEndDate, setLeadSourceCustomEndDate] = useState('');
+  // Campaign data now uses main time range - no separate time range needed
+  // Lead source data now uses main time range - no separate time range needed
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [data, setData] = useState({
     dailyMetrics: [],
     weeklyMetrics: [],
     campaignMetrics: [],
-    summary: { 
-      qualifiedTotal: 0, 
-      qualifiedThisWeek: 0, 
+    summary: {
+      qualifiedTotal: 0,
+      qualifiedThisWeek: 0,
       qualifiedLastWeek: 0,
-      offersTotal: 0, 
-      offersThisWeek: 0, 
+      offersTotal: 0,
+      offersThisWeek: 0,
       offersLastWeek: 0,
       priceMotivatedTotal: 0,
       priceMotivatedThisWeek: 0,
       priceMotivatedLastWeek: 0,
+      throwawayTotal: 0,
+      throwawayThisWeek: 0,
+      throwawayLastWeek: 0,
       qualifiedAvgPerDay: 0,
       offersAvgPerDay: 0,
       priceMotivatedAvgPerDay: 0,
@@ -75,6 +72,20 @@ const Dashboard = () => {
   // Chart data calculation
   const chartData = chartType === CHART_TYPES.WEEKLY ? data.weeklyMetrics : data.dailyMetrics;
 
+  // Helper function to get correct throwaway value based on timeRange
+  const getThrowawayValue = () => {
+    switch (timeRange) {
+      case TIME_RANGES.CURRENT_WEEK:
+        return data.summary.throwawayThisWeek || 0;
+      case TIME_RANGES.LAST_WEEK:
+        return data.summary.throwawayLastWeek || 0;
+      default:
+        // For longer time periods (30d, 90d, custom), use the reliable direct calculation
+        // from stage changes to avoid timezone issues with daily bucket totals
+        return data.summary.throwawayForDateRange || 0;
+    }
+  };
+
   // Line toggle handler
   const handleLineToggle = (lineKey) => {
     setVisibleLines(prev => ({
@@ -90,13 +101,15 @@ const Dashboard = () => {
       setError(null);
       
       try {
-        const { start, end } = getDateRange('main', timeRange, customStartDate, customEndDate, campaignTimeRange, campaignCustomStartDate, campaignCustomEndDate, leadSourceTimeRange, leadSourceCustomStartDate, leadSourceCustomEndDate);
+        const { start, end } = getDateRange('main', timeRange, customStartDate, customEndDate);
+        console.log('📅 Date range:', timeRange);
         const businessDays = getBusinessDays(start, end);
         const realData = await fetchRealData(start, end, businessDays);
         
         setData(realData);
       } catch (error) {
-        console.error('Error fetching data:', error);
+        console.error('ERROR HANDLER TRIGGERED - This is why offers are showing as 0:', error);
+        console.error('Error details:', error.message, error.stack);
         setError('Failed to load pipeline data. Please check your connection and try again.');
         
         // Set empty data on error
@@ -114,6 +127,9 @@ const Dashboard = () => {
             priceMotivatedTotal: 0,
             priceMotivatedThisWeek: 0,
             priceMotivatedLastWeek: 0,
+            throwawayTotal: 0,
+            throwawayThisWeek: 0,
+            throwawayLastWeek: 0,
             qualifiedAvgPerDay: 0,
             offersAvgPerDay: 0,
             priceMotivatedAvgPerDay: 0,
@@ -142,47 +158,9 @@ const Dashboard = () => {
     }
   }, [timeRange, customStartDate, customEndDate]);
 
-  // Campaign data fetching effect
-  useEffect(() => {
-    const fetchCampaign = async () => {
-      try {
-        const campaignMetrics = await fetchCampaignDataUtil(campaignTimeRange, campaignCustomStartDate, campaignCustomEndDate);
-        setData(prev => ({ ...prev, campaignMetrics }));
-      } catch (error) {
-        console.error('Error fetching campaign data:', error);
-      }
-    };
+  // Campaign data is now included in main data fetch - no separate API call needed
 
-    if (campaignTimeRange === TIME_RANGES.CUSTOM) {
-      if (campaignCustomStartDate && campaignCustomEndDate) {
-        const timeoutId = setTimeout(fetchCampaign, 500);
-        return () => clearTimeout(timeoutId);
-      }
-    } else {
-      fetchCampaign();
-    }
-  }, [campaignTimeRange, campaignCustomStartDate, campaignCustomEndDate]);
-
-  // Lead source data fetching effect
-  useEffect(() => {
-    const fetchLeadSource = async () => {
-      try {
-        const leadSourceMetrics = await fetchLeadSourceDataUtil(leadSourceTimeRange, leadSourceCustomStartDate, leadSourceCustomEndDate);
-        setData(prev => ({ ...prev, leadSourceMetrics }));
-      } catch (error) {
-        console.error('Error fetching lead source data:', error);
-      }
-    };
-
-    if (leadSourceTimeRange === TIME_RANGES.CUSTOM) {
-      if (leadSourceCustomStartDate && leadSourceCustomEndDate) {
-        const timeoutId = setTimeout(fetchLeadSource, 500);
-        return () => clearTimeout(timeoutId);
-      }
-    } else {
-      fetchLeadSource();
-    }
-  }, [leadSourceTimeRange, leadSourceCustomStartDate, leadSourceCustomEndDate]);
+  // Lead source data is now included in main data fetch - no separate API call needed
 
   // Loading and error states
   if (loading) {
@@ -232,7 +210,7 @@ const Dashboard = () => {
             icon={Trash2}
             iconColor="text-red-600"
             title="Throwaway Leads"
-            value={data.summary.throwawayTotal}
+            value={getThrowawayValue()}
           />
         </div>
 
@@ -280,7 +258,7 @@ const Dashboard = () => {
           <MetricCard
             icon={Clock}
             iconColor="text-orange-600"
-            title="Avg Time to Offer"
+            title="Time to Offer (30 day avg)"
             value={data.summary.avgTimeToOffer}
             subtitle="days from qualified"
           />
@@ -288,7 +266,7 @@ const Dashboard = () => {
           <MetricCard
             icon={Zap}
             iconColor="text-purple-600"
-            title="Pipeline Velocity"
+            title="Pipeline Velocity (60 day avg)"
             value={data.summary.pipelineVelocity}
             subtitle="avg days qualified → contract"
           />
@@ -312,23 +290,11 @@ const Dashboard = () => {
         {/* Campaign Performance Chart */}
         <CampaignPerformanceChart
           data={data.campaignMetrics}
-          campaignTimeRange={campaignTimeRange}
-          campaignCustomStartDate={campaignCustomStartDate}
-          campaignCustomEndDate={campaignCustomEndDate}
-          onCampaignTimeRangeChange={setCampaignTimeRange}
-          onCampaignCustomStartDateChange={setCampaignCustomStartDate}
-          onCampaignCustomEndDateChange={setCampaignCustomEndDate}
         />
 
         {/* Lead Source Chart */}
         <LeadSourceChart
           data={data.leadSourceMetrics}
-          leadSourceTimeRange={leadSourceTimeRange}
-          leadSourceCustomStartDate={leadSourceCustomStartDate}
-          leadSourceCustomEndDate={leadSourceCustomEndDate}
-          onLeadSourceTimeRangeChange={setLeadSourceTimeRange}
-          onLeadSourceCustomStartDateChange={setLeadSourceCustomStartDate}
-          onLeadSourceCustomEndDateChange={setLeadSourceCustomEndDate}
         />
 
         {/* Recent Activity Table */}

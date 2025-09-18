@@ -1,30 +1,13 @@
 import React from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { Calendar } from 'lucide-react';
-import TimeRangeSelector from '../Header/TimeRangeSelector';
 import { PIE_COLORS } from '../../utils/constants';
 
-const LeadSourceChart = ({ 
-  data, 
-  leadSourceTimeRange,
-  leadSourceCustomStartDate,
-  leadSourceCustomEndDate,
-  onLeadSourceTimeRangeChange,
-  onLeadSourceCustomStartDateChange,
-  onLeadSourceCustomEndDateChange
-}) => {
+const LeadSourceChart = ({ data }) => {
   return (
     <div className="bg-white rounded-lg shadow p-6 mb-8">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900">Qualified Leads by Lead Source</h3>
-        <TimeRangeSelector
-          timeRange={leadSourceTimeRange}
-          customStartDate={leadSourceCustomStartDate}
-          customEndDate={leadSourceCustomEndDate}
-          onTimeRangeChange={onLeadSourceTimeRangeChange}
-          onCustomStartDateChange={onLeadSourceCustomStartDateChange}
-          onCustomEndDateChange={onLeadSourceCustomEndDateChange}
-        />
+        <div className="text-sm text-gray-500">Uses main dashboard time range</div>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ResponsiveContainer width="100%" height={350}>
