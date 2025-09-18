@@ -30,8 +30,8 @@ app = Flask(__name__)
 
 def extract_lead_source_tag(tags):
     """
-    Extract lead source tag from tags array with flexible matching
-    Returns the identified lead source or None
+    Extract lead source tag from tags array - only Roor and ReadyMode
+    Returns 'ReadyMode', 'Roor', or None
     """
     if not tags or not isinstance(tags, list):
         return None
@@ -39,7 +39,7 @@ def extract_lead_source_tag(tags):
     # Convert all tags to lowercase for case-insensitive matching
     tags_lower = [tag.lower() if isinstance(tag, str) else str(tag).lower() for tag in tags]
 
-    # Check for ReadyMode variations
+    # Check for ReadyMode variations (readymode, ready mode, ready-mode)
     for tag in tags_lower:
         if 'readymode' in tag or 'ready mode' in tag or 'ready-mode' in tag:
             return "ReadyMode"
@@ -48,21 +48,6 @@ def extract_lead_source_tag(tags):
     for tag in tags_lower:
         if 'roor' in tag:
             return "Roor"
-
-    # Check for other common lead source patterns
-    for tag in tags_lower:
-        if any(pattern in tag for pattern in ['facebook', 'fb', 'meta']):
-            return "Facebook"
-        elif any(pattern in tag for pattern in ['google', 'ppc', 'adwords']):
-            return "Google"
-        elif any(pattern in tag for pattern in ['zillow', 'zil']):
-            return "Zillow"
-        elif any(pattern in tag for pattern in ['realtor', 'realtor.com']):
-            return "Realtor.com"
-        elif any(pattern in tag for pattern in ['website', 'web', 'organic']):
-            return "Website"
-        elif any(pattern in tag for pattern in ['referral', 'ref']):
-            return "Referral"
 
     return None
 
