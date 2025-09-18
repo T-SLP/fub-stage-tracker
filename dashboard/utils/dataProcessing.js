@@ -781,6 +781,7 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   requestedPeriodChanges.forEach(change => {
     if (change.stage_to === 'ACQ - Qualified') {
       const source = change.lead_source_tag || 'Unknown';
+      console.log(`🔍 LEAD SOURCE DEBUG: ${change.first_name} ${change.last_name} - lead_source_tag: "${change.lead_source_tag}" -> using: "${source}"`);
       leadSourceCounts[source] = (leadSourceCounts[source] || 0) + 1;
     }
   });
