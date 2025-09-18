@@ -6,7 +6,6 @@ const CampaignPerformanceChart = ({ data }) => {
     <div className="bg-white rounded-lg shadow p-6 mb-8">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900">Qualified Leads by Campaign Code</h3>
-        <div className="text-sm text-gray-500">Uses main dashboard time range</div>
       </div>
       <ResponsiveContainer width="100%" height={400}>
         <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
