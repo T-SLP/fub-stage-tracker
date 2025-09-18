@@ -801,6 +801,15 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     item.percentage = leadSourceTotal > 0 ? Math.round((item.value / leadSourceTotal) * 100) : 0;
   });
 
+  // Debug: Compare lead source total vs main qualified total
+  console.log('🔍 LEAD SOURCE vs QUALIFIED TOTAL COMPARISON:');
+  console.log(`  - leadSourceTotal (direct count): ${leadSourceTotal}`);
+  console.log(`  - qualifiedTotal (daily buckets): ${qualifiedTotal}`);
+  console.log(`  - requestedPeriodChanges with ACQ-Qualified: ${requestedPeriodChanges.filter(c => c.stage_to === 'ACQ - Qualified').length}`);
+  if (leadSourceTotal !== qualifiedTotal) {
+    console.warn('⚠️  MISMATCH detected between lead source total and qualified total!');
+  }
+
   // Calculate throwaway leads for the selected date range (reliable method)
   // This counts all throwaway transitions within the requested period
   const throwawayForDateRange = requestedPeriodChanges
