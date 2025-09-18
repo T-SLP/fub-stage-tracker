@@ -782,6 +782,11 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     if (change.stage_to === 'ACQ - Qualified') {
       const source = change.lead_source_tag || 'Unknown';
       console.log(`🔍 LEAD SOURCE DEBUG: ${change.first_name} ${change.last_name} - lead_source_tag: "${change.lead_source_tag}" -> using: "${source}"`);
+
+      // Extra debug for NULL values - check campaign_id and other fields
+      if (!change.lead_source_tag || change.lead_source_tag === 'null') {
+        console.log(`🔍 NULL LEAD DEBUG: ${change.first_name} ${change.last_name} - campaign_id: "${change.campaign_id}", who_pushed_lead: "${change.who_pushed_lead}", source: "${change.source}"`);
+      }
       leadSourceCounts[source] = (leadSourceCounts[source] || 0) + 1;
     }
   });
