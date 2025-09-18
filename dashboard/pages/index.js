@@ -6,8 +6,7 @@ import { TIME_RANGES, CHART_TYPES } from '../utils/constants';
 import {
   getDateRange,
   getBusinessDays,
-  fetchRealData,
-  fetchCampaignData as fetchCampaignDataUtil
+  fetchRealData
 } from '../utils/dataProcessing';
 
 // Components
@@ -35,9 +34,7 @@ const Dashboard = () => {
     priceMotivated: true,
     throwawayLeads: true
   });
-  const [campaignTimeRange, setCampaignTimeRange] = useState(TIME_RANGES.CURRENT_WEEK);
-  const [campaignCustomStartDate, setCampaignCustomStartDate] = useState('');
-  const [campaignCustomEndDate, setCampaignCustomEndDate] = useState('');
+  // Campaign data now uses main time range - no separate time range needed
   // Lead source data now uses main time range - no separate time range needed
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -104,7 +101,7 @@ const Dashboard = () => {
       setError(null);
       
       try {
-        const { start, end } = getDateRange('main', timeRange, customStartDate, customEndDate, campaignTimeRange, campaignCustomStartDate, campaignCustomEndDate);
+        const { start, end } = getDateRange('main', timeRange, customStartDate, customEndDate);
         console.log('📅 Date range:', timeRange);
         const businessDays = getBusinessDays(start, end);
         const realData = await fetchRealData(start, end, businessDays);
@@ -161,26 +158,7 @@ const Dashboard = () => {
     }
   }, [timeRange, customStartDate, customEndDate]);
 
-  // Campaign data fetching effect
-  useEffect(() => {
-    const fetchCampaign = async () => {
-      try {
-        const campaignMetrics = await fetchCampaignDataUtil(campaignTimeRange, campaignCustomStartDate, campaignCustomEndDate);
-        setData(prev => ({ ...prev, campaignMetrics }));
-      } catch (error) {
-        console.error('Error fetching campaign data:', error);
-      }
-    };
-
-    if (campaignTimeRange === TIME_RANGES.CUSTOM) {
-      if (campaignCustomStartDate && campaignCustomEndDate) {
-        const timeoutId = setTimeout(fetchCampaign, 500);
-        return () => clearTimeout(timeoutId);
-      }
-    } else {
-      fetchCampaign();
-    }
-  }, [campaignTimeRange, campaignCustomStartDate, campaignCustomEndDate]);
+  // Campaign data is now included in main data fetch - no separate API call needed
 
   // Lead source data is now included in main data fetch - no separate API call needed
 
@@ -312,12 +290,6 @@ const Dashboard = () => {
         {/* Campaign Performance Chart */}
         <CampaignPerformanceChart
           data={data.campaignMetrics}
-          campaignTimeRange={campaignTimeRange}
-          campaignCustomStartDate={campaignCustomStartDate}
-          campaignCustomEndDate={campaignCustomEndDate}
-          onCampaignTimeRangeChange={setCampaignTimeRange}
-          onCampaignCustomStartDateChange={setCampaignCustomStartDate}
-          onCampaignCustomEndDateChange={setCampaignCustomEndDate}
         />
 
         {/* Lead Source Chart */}

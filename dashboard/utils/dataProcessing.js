@@ -9,18 +9,13 @@ export const getWeekStart = (date) => {
 };
 
 // Helper function to get date range
-export const getDateRange = (timeRangeType = 'main', timeRange, customStart = '', customEnd = '', campaignTimeRange, campaignCustomStartDate, campaignCustomEndDate) => {
+export const getDateRange = (timeRangeType = 'main', timeRange, customStart = '', customEnd = '') => {
   let selectedTimeRange, selectedCustomStart, selectedCustomEnd;
-  
-  if (timeRangeType === 'campaign') {
-    selectedTimeRange = campaignTimeRange;
-    selectedCustomStart = campaignCustomStartDate;
-    selectedCustomEnd = campaignCustomEndDate;
-  } else {
-    selectedTimeRange = timeRange;
-    selectedCustomStart = customStart;
-    selectedCustomEnd = customEnd;
-  }
+
+  // All charts now use main time range - no separate campaign or lead source time ranges
+  selectedTimeRange = timeRange;
+  selectedCustomStart = customStart;
+  selectedCustomEnd = customEnd;
 
   if (selectedCustomStart && selectedCustomEnd) {
     return {
@@ -869,99 +864,6 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
 };
 
 // Fetch campaign data separately
-export const fetchCampaignData = async (campaignTimeRange, campaignCustomStartDate, campaignCustomEndDate) => {
-  try {
-    // Simplified date range calculation
-    let start, end;
-    
-    if (campaignCustomStartDate && campaignCustomEndDate) {
-      start = new Date(campaignCustomStartDate);
-      end = new Date(campaignCustomEndDate + 'T23:59:59.999Z');
-    } else {
-      end = new Date();
-      start = new Date();
-      
-      switch (campaignTimeRange) {
-        case 'current_week':
-          const currentWeekStart = getWeekStart(end);
-          start = currentWeekStart;
-          break;
-        case 'last_week':
-          const lastWeekEnd = new Date(getWeekStart(end));
-          lastWeekEnd.setDate(lastWeekEnd.getDate() - 1);
-          start = getWeekStart(lastWeekEnd);
-          end = lastWeekEnd;
-          break;
-        case '30d':
-          start.setDate(start.getDate() - 30);
-          break;
-        case '90d':
-          start.setDate(start.getDate() - 90);
-          break;
-        default:
-          // Default to last 30 days
-          start.setDate(start.getDate() - 30);
-      }
-    }
-
-    const startDateStr = start.toISOString().split('T')[0];
-    const endDateStr = end.toISOString().split('T')[0];
-    
-    const response = await fetch('/api/pipeline-data', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        startDate: startDateStr,
-        endDate: endDateStr
-      })
-    });
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    const responseData = await response.json();
-    const stageChanges = responseData.stageChanges || responseData; // Handle new format
-    
-    // Filter stage changes to only include those within the requested date range
-    const filteredStageChanges = stageChanges.filter(change => {
-      const changeDate = new Date(change.changed_at);
-      const easternDateStr = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'America/New_York',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      }).format(changeDate);
-      
-      const easternDate = new Date(easternDateStr);
-      return easternDate >= start && easternDate <= end;
-    });
-    
-    // Calculate campaign metrics from filtered data
-    const campaignCounts = {};
-    filteredStageChanges.forEach(change => {
-      if (change.stage_to === 'ACQ - Qualified') {
-        const campaign = change.campaign_id || 'No Campaign';
-        campaignCounts[campaign] = (campaignCounts[campaign] || 0) + 1;
-      }
-    });
-
-    const campaignMetrics = Object.entries(campaignCounts).map(([campaign, qualified]) => ({
-      campaign,
-      qualified,
-      offers: 0,
-      priceMotivated: 0,
-      leads: 0
-    }));
-
-    return campaignMetrics;
-    
-  } catch (error) {
-    console.error('Error fetching campaign data:', error);
-    throw error;
-  }
-};
+// Campaign data is now included in main fetchRealData function - no separate fetch needed
 
 // Lead source data is now included in main fetchRealData function - no separate fetch needed
