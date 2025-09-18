@@ -2,6 +2,7 @@ import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const CampaignPerformanceChart = ({ data }) => {
+  // Chart component for campaign performance
   return (
     <div className="bg-white rounded-lg shadow p-6 mb-8">
       <div className="flex items-center justify-between mb-4">

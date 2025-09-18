@@ -3,6 +3,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { PIE_COLORS } from '../../utils/constants';
 
 const LeadSourceChart = ({ data }) => {
+  // Chart component for lead source breakdown
   return (
     <div className="bg-white rounded-lg shadow p-6 mb-8">
       <div className="flex items-center justify-between mb-4">
