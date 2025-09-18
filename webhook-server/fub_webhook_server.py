@@ -30,16 +30,39 @@ app = Flask(__name__)
 
 def extract_lead_source_tag(tags):
     """
-    Extract specific lead source tag from tags array
-    Returns 'ReadyMode', 'Roor', or None
+    Extract lead source tag from tags array with flexible matching
+    Returns the identified lead source or None
     """
     if not tags or not isinstance(tags, list):
         return None
 
-    if "ReadyMode" in tags:
-        return "ReadyMode"
-    elif "Roor" in tags:
-        return "Roor"
+    # Convert all tags to lowercase for case-insensitive matching
+    tags_lower = [tag.lower() if isinstance(tag, str) else str(tag).lower() for tag in tags]
+
+    # Check for ReadyMode variations
+    for tag in tags_lower:
+        if 'readymode' in tag or 'ready mode' in tag or 'ready-mode' in tag:
+            return "ReadyMode"
+
+    # Check for Roor variations
+    for tag in tags_lower:
+        if 'roor' in tag:
+            return "Roor"
+
+    # Check for other common lead source patterns
+    for tag in tags_lower:
+        if any(pattern in tag for pattern in ['facebook', 'fb', 'meta']):
+            return "Facebook"
+        elif any(pattern in tag for pattern in ['google', 'ppc', 'adwords']):
+            return "Google"
+        elif any(pattern in tag for pattern in ['zillow', 'zil']):
+            return "Zillow"
+        elif any(pattern in tag for pattern in ['realtor', 'realtor.com']):
+            return "Realtor.com"
+        elif any(pattern in tag for pattern in ['website', 'web', 'organic']):
+            return "Website"
+        elif any(pattern in tag for pattern in ['referral', 'ref']):
+            return "Referral"
 
     return None
 
@@ -224,10 +247,14 @@ class WebhookProcessor:
                     lead_source_tag = extract_lead_source_tag(tags)
 
                     person_name = f"{first_name} {last_name}"
+                    print(f"🔍 DEBUG: Processing {person_name} with {len(tags)} tags: {tags}")
                     if lead_source_tag:
                         print(f"✅ LEAD SOURCE EXTRACTED for {person_name}: {lead_source_tag} from tags: {tags}")
                     else:
                         print(f"⚠️  NO LEAD SOURCE found for {person_name}, tags: {tags}")
+                        # Extra debugging for unknown sources
+                        if tags:
+                            print(f"📋 Available tags for analysis: {[str(tag).lower() for tag in tags]}")
 
                     # SELECT FOR UPDATE to lock person record during stage check
                     cur.execute("""
