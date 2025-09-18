@@ -5,4 +5,4 @@ builder = "NIXPACKS"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
-startCommand = "cd webhook-server && python fub_webhook_server.py"
+startCommand = "cd webhook-server && . /opt/venv/bin/activate && gunicorn -w 4 -b 0.0.0.0:${PORT:-8000} fub_webhook_server:app --timeout 120 --log-level info"
