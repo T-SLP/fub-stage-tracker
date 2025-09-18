@@ -780,13 +780,25 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
   const leadSourceCounts = {};
   requestedPeriodChanges.forEach(change => {
     if (change.stage_to === 'ACQ - Qualified') {
-      const source = change.lead_source_tag || 'Unknown';
-      console.log(`🔍 LEAD SOURCE DEBUG: ${change.first_name} ${change.last_name} - lead_source_tag: "${change.lead_source_tag}" -> using: "${source}"`);
+      let source = change.lead_source_tag;
 
-      // Extra debug for NULL values - check campaign_id and other fields
-      if (!change.lead_source_tag || change.lead_source_tag === 'null') {
-        console.log(`🔍 NULL LEAD DEBUG: ${change.first_name} ${change.last_name} - campaign_id: "${change.campaign_id}", who_pushed_lead: "${change.who_pushed_lead}", source: "${change.source}"`);
+      // Fallback classification using campaign codes for NULL lead_source_tag
+      if (!source || source === 'null') {
+        const campaignId = change.campaign_id || '';
+        console.log(`🔍 NULL FALLBACK: ${change.first_name} ${change.last_name} - campaign_id: "${campaignId}"`);
+
+        // Classify based on campaign patterns
+        if (campaignId.includes('GA') || campaignId.includes('NC')) {
+          // Assume GA (Georgia) and NC (North Carolina) campaigns are Roor
+          source = 'Roor';
+          console.log(`✅ FALLBACK CLASSIFICATION: ${change.first_name} ${change.last_name} -> Roor (campaign: ${campaignId})`);
+        } else {
+          source = 'Unknown';
+          console.log(`⚠️ STILL UNKNOWN: ${change.first_name} ${change.last_name} - campaign: "${campaignId}"`);
+        }
       }
+
+      console.log(`🔍 LEAD SOURCE DEBUG: ${change.first_name} ${change.last_name} - lead_source_tag: "${change.lead_source_tag}" -> using: "${source}"`);
       leadSourceCounts[source] = (leadSourceCounts[source] || 0) + 1;
     }
   });
