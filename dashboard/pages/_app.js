@@ -1,6 +1,6 @@
 import '../styles/globals.css'
 
-// Test auto-deployment trigger - reconnected GitHub integration
+// Test auto-deployment trigger - master as default branch
 function MyApp({ Component, pageProps }) {
   return <Component {...pageProps} />
 }
