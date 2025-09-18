@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ['python39']
+
+[phases.install]
+cmds = ['python -m venv --copies /opt/venv', '. /opt/venv/bin/activate && pip install -r requirements.txt']
+
+[start]
+cmd = 'cd webhook-server && . /opt/venv/bin/activate && gunicorn -w 4 -b 0.0.0.0: fub_webhook_server:app --timeout 120 --log-level info'
