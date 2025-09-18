@@ -8,7 +8,7 @@ const LeadSourceChart = ({ data }) => {
     <div className="bg-white rounded-lg shadow p-6 mb-8">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900">Qualified Leads by Lead Source ✓</h3>
-        {/* REBUILD 2025-09-18: Text completely removed */}
+        {/* PRODUCTION BRANCH TEST: master → production */}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ResponsiveContainer width="100%" height={350}>
