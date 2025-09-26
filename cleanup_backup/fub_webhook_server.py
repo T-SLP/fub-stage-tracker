@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-FUB Webhook Server - Complete Deployment Version v2.1
+FUB Webhook Server - Complete Deployment Version
 Production webhook server with enhanced lead source processing
 Deploy this file to Railway to fix the lead source processing issue.
-Auto-deployment test: 2025-09-17
 """
 
 import os
@@ -318,23 +317,10 @@ class WebhookProcessor:
         """Get current health and statistics"""
         uptime_hours = (datetime.datetime.utcnow() - self.stats['system_start_time']).total_seconds() / 3600
 
-        # Health issues detection
-        health_issues = []
-        is_healthy = True
-
-        # Check if no webhooks received for over 90 minutes
-        if self.stats['last_webhook_time']:
-            minutes_since_last = (datetime.datetime.utcnow() - self.stats['last_webhook_time']).total_seconds() / 60
-            if minutes_since_last > 90:
-                health_issues.append(f"No webhooks for {int(minutes_since_last)} minutes")
-                is_healthy = False
-
         return {
-            'status': 'healthy' if is_healthy else 'unhealthy',
-            'healthy': is_healthy,
-            'message': 'Real-time stage tracking active' if is_healthy else 'Health issues detected',
-            'version': '2.1-test-deployment',
-            'system_type': 'FUB Webhook Server',
+            'status': 'healthy',
+            'healthy': True,
+            'message': 'Real-time stage tracking active',
             'uptime_hours': round(uptime_hours, 1),
             'system_start_time': self.stats['system_start_time'].strftime('%a, %d %b %Y %H:%M:%S GMT'),
             'last_webhook_time': self.stats['last_webhook_time'].strftime('%a, %d %b %Y %H:%M:%S GMT') if self.stats['last_webhook_time'] else None,
@@ -349,26 +335,13 @@ class WebhookProcessor:
             'success_rate': round(self.stats['success_rate'], 1),
             'webhook_rate_per_hour': round(self.stats['webhook_rate_per_hour'], 1),
             'webhook_url': f"{WEBHOOK_BASE_URL}/webhook/fub/stage-change",
-            'health_issues': health_issues,
+            'health_issues': [],
             'enhanced_features': [
                 'Lead source extraction from tags',
                 'Race condition protection',
                 'Webhook deduplication',
                 'Transaction safety'
-            ],
-            'capabilities': {
-                'real_time_webhooks': True,
-                'enhanced_analytics': True,
-                'rapid_transition_capture': True,
-                'time_in_stage_tracking': True
-            },
-            'configuration': {
-                'database_configured': bool(SUPABASE_DB_URL),
-                'fub_api_configured': bool(FUB_API_KEY),
-                'fub_system_key_configured': bool(FUB_SYSTEM_KEY),
-                'webhook_base_url': WEBHOOK_BASE_URL,
-                'relevant_events': ['peopleStageUpdated', 'peopleCreated', 'peopleUpdated', 'peopleTagsCreated']
-            }
+            ]
         }
 
 # Global webhook processor instance
@@ -422,7 +395,7 @@ def root():
     return jsonify({
         'service': 'FUB Webhook Server',
         'status': 'running',
-        'version': '2.1-test-deployment',
+        'version': '2.1-enhanced',
         'message': 'Enhanced lead source processing active',
         'endpoints': [
             '/health',

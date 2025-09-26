@@ -3,12 +3,10 @@ import { Users, Clock, Target, TrendingUp, Zap, Trash2 } from 'lucide-react';
 
 // Constants and Utils
 import { TIME_RANGES, CHART_TYPES } from '../utils/constants';
-import { 
-  getDateRange, 
-  getBusinessDays, 
-  fetchRealData, 
-  fetchCampaignData as fetchCampaignDataUtil, 
-  fetchLeadSourceData as fetchLeadSourceDataUtil 
+import {
+  getDateRange,
+  getBusinessDays,
+  fetchRealData
 } from '../utils/dataProcessing';
 
 // Components
@@ -36,12 +34,8 @@ const Dashboard = () => {
     priceMotivated: true,
     throwawayLeads: true
   });
-  const [campaignTimeRange, setCampaignTimeRange] = useState(TIME_RANGES.CURRENT_WEEK);
-  const [campaignCustomStartDate, setCampaignCustomStartDate] = useState('');
-  const [campaignCustomEndDate, setCampaignCustomEndDate] = useState('');
-  const [leadSourceTimeRange, setLeadSourceTimeRange] = useState(TIME_RANGES.CURRENT_WEEK);
-  const [leadSourceCustomStartDate, setLeadSourceCustomStartDate] = useState('');
-  const [leadSourceCustomEndDate, setLeadSourceCustomEndDate] = useState('');
+  // Campaign data now uses main time range - no separate time range needed
+  // Lead source data now uses main time range - no separate time range needed
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [data, setData] = useState({
@@ -107,7 +101,7 @@ const Dashboard = () => {
       setError(null);
       
       try {
-        const { start, end } = getDateRange('main', timeRange, customStartDate, customEndDate, campaignTimeRange, campaignCustomStartDate, campaignCustomEndDate, leadSourceTimeRange, leadSourceCustomStartDate, leadSourceCustomEndDate);
+        const { start, end } = getDateRange('main', timeRange, customStartDate, customEndDate);
         console.log('📅 Date range:', timeRange);
         const businessDays = getBusinessDays(start, end);
         const realData = await fetchRealData(start, end, businessDays);
@@ -164,47 +158,9 @@ const Dashboard = () => {
     }
   }, [timeRange, customStartDate, customEndDate]);
 
-  // Campaign data fetching effect
-  useEffect(() => {
-    const fetchCampaign = async () => {
-      try {
-        const campaignMetrics = await fetchCampaignDataUtil(campaignTimeRange, campaignCustomStartDate, campaignCustomEndDate);
-        setData(prev => ({ ...prev, campaignMetrics }));
-      } catch (error) {
-        console.error('Error fetching campaign data:', error);
-      }
-    };
+  // Campaign data is now included in main data fetch - no separate API call needed
 
-    if (campaignTimeRange === TIME_RANGES.CUSTOM) {
-      if (campaignCustomStartDate && campaignCustomEndDate) {
-        const timeoutId = setTimeout(fetchCampaign, 500);
-        return () => clearTimeout(timeoutId);
-      }
-    } else {
-      fetchCampaign();
-    }
-  }, [campaignTimeRange, campaignCustomStartDate, campaignCustomEndDate]);
-
-  // Lead source data fetching effect
-  useEffect(() => {
-    const fetchLeadSource = async () => {
-      try {
-        const leadSourceMetrics = await fetchLeadSourceDataUtil(leadSourceTimeRange, leadSourceCustomStartDate, leadSourceCustomEndDate);
-        setData(prev => ({ ...prev, leadSourceMetrics }));
-      } catch (error) {
-        console.error('Error fetching lead source data:', error);
-      }
-    };
-
-    if (leadSourceTimeRange === TIME_RANGES.CUSTOM) {
-      if (leadSourceCustomStartDate && leadSourceCustomEndDate) {
-        const timeoutId = setTimeout(fetchLeadSource, 500);
-        return () => clearTimeout(timeoutId);
-      }
-    } else {
-      fetchLeadSource();
-    }
-  }, [leadSourceTimeRange, leadSourceCustomStartDate, leadSourceCustomEndDate]);
+  // Lead source data is now included in main data fetch - no separate API call needed
 
   // Loading and error states
   if (loading) {
@@ -334,23 +290,11 @@ const Dashboard = () => {
         {/* Campaign Performance Chart */}
         <CampaignPerformanceChart
           data={data.campaignMetrics}
-          campaignTimeRange={campaignTimeRange}
-          campaignCustomStartDate={campaignCustomStartDate}
-          campaignCustomEndDate={campaignCustomEndDate}
-          onCampaignTimeRangeChange={setCampaignTimeRange}
-          onCampaignCustomStartDateChange={setCampaignCustomStartDate}
-          onCampaignCustomEndDateChange={setCampaignCustomEndDate}
         />
 
         {/* Lead Source Chart */}
         <LeadSourceChart
           data={data.leadSourceMetrics}
-          leadSourceTimeRange={leadSourceTimeRange}
-          leadSourceCustomStartDate={leadSourceCustomStartDate}
-          leadSourceCustomEndDate={leadSourceCustomEndDate}
-          onLeadSourceTimeRangeChange={setLeadSourceTimeRange}
-          onLeadSourceCustomStartDateChange={setLeadSourceCustomStartDate}
-          onLeadSourceCustomEndDateChange={setLeadSourceCustomEndDate}
         />
 
         {/* Recent Activity Table */}
