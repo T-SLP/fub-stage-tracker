@@ -440,6 +440,128 @@ def handle_fub_stage_webhook():
         traceback.print_exc()
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
+@app.route('/debug/test-processing/<person_id>', methods=['GET'])
+def debug_test_processing(person_id):
+    """Debug endpoint to test webhook processing steps"""
+    results = {
+        'person_id': person_id,
+        'steps': {},
+        'success': False,
+        'error': None
+    }
+
+    try:
+        # Step 1: Test FUB API connection
+        print(f"🔍 DEBUG: Testing FUB API for person {person_id}")
+        try:
+            import base64
+            auth_string = base64.b64encode(f'{FUB_API_KEY}:'.encode()).decode()
+            response = requests.get(
+                f'https://api.followupboss.com/v1/people/{person_id}',
+                headers={
+                    'Authorization': f'Basic {auth_string}',
+                    'X-System': 'SynergyFUBLeadMetrics',
+                    'X-System-Key': FUB_SYSTEM_KEY,
+                    'Content-Type': 'application/json'
+                },
+                timeout=10
+            )
+            results['steps']['fub_api'] = {
+                'success': response.status_code == 200,
+                'status_code': response.status_code,
+                'response_length': len(response.text),
+                'error': None if response.status_code == 200 else response.text[:200]
+            }
+
+            if response.status_code == 200:
+                person_data = response.json().get('person', response.json())
+                results['steps']['person_data'] = {
+                    'success': True,
+                    'first_name': person_data.get('firstName', 'Unknown'),
+                    'last_name': person_data.get('lastName', 'Unknown'),
+                    'stage': person_data.get('stage', 'Unknown'),
+                    'tags_count': len(person_data.get('tags', []))
+                }
+            else:
+                results['steps']['person_data'] = {'success': False, 'error': 'FUB API failed'}
+
+        except Exception as e:
+            results['steps']['fub_api'] = {'success': False, 'error': str(e)}
+            results['steps']['person_data'] = {'success': False, 'error': 'FUB API exception'}
+
+        # Step 2: Test database connection
+        print(f"🔍 DEBUG: Testing database connection")
+        try:
+            conn = psycopg2.connect(SUPABASE_DB_URL, sslmode='require')
+            cur = conn.cursor()
+
+            # Test basic query
+            cur.execute("SELECT COUNT(*) FROM stage_changes LIMIT 1")
+            count = cur.fetchone()[0]
+
+            results['steps']['database'] = {
+                'success': True,
+                'total_records': count,
+                'connection': 'successful'
+            }
+
+            # Test person lookup
+            cur.execute("""
+                SELECT stage_to, changed_at
+                FROM stage_changes
+                WHERE person_id = %s
+                ORDER BY changed_at DESC
+                LIMIT 1
+            """, (person_id,))
+
+            last_stage = cur.fetchone()
+            results['steps']['person_lookup'] = {
+                'success': True,
+                'has_history': last_stage is not None,
+                'last_stage': last_stage[0] if last_stage else None,
+                'last_change': str(last_stage[1]) if last_stage else None
+            }
+
+            conn.close()
+
+        except Exception as e:
+            results['steps']['database'] = {'success': False, 'error': str(e)}
+            results['steps']['person_lookup'] = {'success': False, 'error': 'Database failed'}
+
+        # Step 3: Test full processing simulation (if previous steps passed)
+        if (results['steps'].get('fub_api', {}).get('success') and
+            results['steps'].get('database', {}).get('success')):
+
+            print(f"🔍 DEBUG: Simulating full webhook processing")
+            try:
+                # Simulate the webhook processing without actually inserting
+                webhook_data = {
+                    'event': 'debug_test',
+                    'uri': f'https://api.followupboss.com/v1/people/{person_id}'
+                }
+
+                success = webhook_processor._process_single_webhook(webhook_data)
+                results['steps']['full_processing'] = {
+                    'success': success,
+                    'simulated': True
+                }
+
+            except Exception as e:
+                results['steps']['full_processing'] = {'success': False, 'error': str(e)}
+
+        # Determine overall success
+        all_steps_passed = all(
+            step.get('success', False)
+            for step in results['steps'].values()
+        )
+        results['success'] = all_steps_passed
+
+        return jsonify(results)
+
+    except Exception as e:
+        results['error'] = str(e)
+        return jsonify(results), 500
+
 @app.route('/', methods=['GET'])
 def root():
     """Root endpoint"""
