@@ -16,7 +16,14 @@
       "Read(//c/Users/troge/**)",
       "WebFetch(domain:fub-stage-tracker-production.up.railway.app)",
       "Bash(python3:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(setup-email-alerts.bat)",
+      "Bash(cp:*)",
+      "Bash(export SMTP_SERVER=smtp.gmail.com)",
+      "Bash(export SMTP_PORT=587)",
+      "Bash(export ALERT_EMAIL_ADDRESS=travis@synergylandpartners.com)",
+      "Bash(export ALERT_EMAIL_PASSWORD=\"yckr awfu wead wbeu\")",
+      "Bash(export ALERT_RECIPIENT=contact@synergylandpartners.com)"
     ],
     "deny": [],
     "ask": []
