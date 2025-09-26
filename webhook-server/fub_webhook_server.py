@@ -132,11 +132,20 @@ class WebhookProcessor:
     def _extract_person_id(self, webhook_data: Dict[str, Any]) -> Optional[str]:
         """Extract person ID from webhook data with enhanced patterns"""
 
+        print(f"🔍 DEBUG: Extracting person ID from webhook")
+        print(f"   Webhook keys: {list(webhook_data.keys())}")
+        print(f"   Has resourceIds: {'resourceIds' in webhook_data}")
+        if 'resourceIds' in webhook_data:
+            print(f"   resourceIds value: {webhook_data['resourceIds']}")
+            print(f"   resourceIds type: {type(webhook_data['resourceIds'])}")
+
         # Method 0: FUB resourceIds array (primary format from Railway logs)
         if 'resourceIds' in webhook_data and isinstance(webhook_data['resourceIds'], list):
             resource_ids = webhook_data['resourceIds']
             if len(resource_ids) > 0:
-                return str(resource_ids[0])
+                person_id = str(resource_ids[0])
+                print(f"✅ SUCCESS: Extracted person ID from resourceIds: {person_id}")
+                return person_id
 
         # Method 1: URI pattern (both /people/{id}/ and ?id={id} query params)
         if 'uri' in webhook_data:
