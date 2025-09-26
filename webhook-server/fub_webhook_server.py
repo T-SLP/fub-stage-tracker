@@ -79,6 +79,9 @@ class WebhookProcessor:
         # Background threads were causing webhooks to be ignored on Railway
         print("🚀 SYNCHRONOUS Webhook processor started - FIXED THREADING ISSUES")
 
+        # Debug storage for recent webhook data
+        self.recent_webhook_data = deque(maxlen=10)  # Store last 10 webhooks for debugging
+
     def add_webhook_to_queue(self, webhook_data: Dict[str, Any]) -> bool:
         """Add webhook to processing queue with deduplication"""
         try:
@@ -86,8 +89,12 @@ class WebhookProcessor:
                 self.stats['webhooks_received'] += 1
                 self.stats['last_webhook_time'] = datetime.datetime.utcnow()
 
-                # Extract person ID with enhanced logging
+                # Extract person ID with enhanced logging and debug storage
                 print(f"🔍 RAW WEBHOOK DATA: {webhook_data}")
+                self.recent_webhook_data.append({
+                    'timestamp': datetime.datetime.utcnow().isoformat(),
+                    'data': webhook_data
+                })
                 person_id = self._extract_person_id(webhook_data)
                 if not person_id:
                     print(f"⚠️  No person ID extracted from webhook")
@@ -122,16 +129,44 @@ class WebhookProcessor:
             return False
 
     def _extract_person_id(self, webhook_data: Dict[str, Any]) -> Optional[str]:
-        """Extract person ID from webhook data"""
-        if 'uri' in webhook_data and '/people/' in webhook_data['uri']:
-            return webhook_data['uri'].split('/people/')[-1].split('/')[0]
+        """Extract person ID from webhook data with enhanced patterns"""
 
+        # Method 1: URI pattern /people/{id}/
+        if 'uri' in webhook_data and '/people/' in webhook_data['uri']:
+            person_id = webhook_data['uri'].split('/people/')[-1].split('/')[0]
+            if person_id and person_id.isdigit():
+                return person_id
+
+        # Method 2: Direct personId field
+        if 'personId' in webhook_data:
+            return str(webhook_data['personId'])
+
+        # Method 3: person_id field
+        if 'person_id' in webhook_data:
+            return str(webhook_data['person_id'])
+
+        # Method 4: id field directly
+        if 'id' in webhook_data:
+            return str(webhook_data['id'])
+
+        # Method 5: data.people array
         if 'data' in webhook_data and 'people' in webhook_data['data']:
             people = webhook_data['data']['people']
             if isinstance(people, list) and len(people) > 0:
                 person = people[0]
                 if isinstance(person, dict) and 'id' in person:
                     return str(person['id'])
+
+        # Method 6: data.person object
+        if 'data' in webhook_data and 'person' in webhook_data['data']:
+            person = webhook_data['data']['person']
+            if isinstance(person, dict) and 'id' in person:
+                return str(person['id'])
+
+        # Method 7: subject field (common in FUB webhooks)
+        if 'subject' in webhook_data and isinstance(webhook_data['subject'], dict):
+            if 'id' in webhook_data['subject']:
+                return str(webhook_data['subject']['id'])
 
         return None
 
@@ -390,6 +425,14 @@ webhook_processor = WebhookProcessor()
 def health_check():
     """Health check endpoint"""
     return jsonify(webhook_processor.get_health_stats())
+
+@app.route('/debug/webhooks', methods=['GET'])
+def debug_webhook_data():
+    """Debug endpoint to show recent webhook data"""
+    return jsonify({
+        'recent_webhooks': list(webhook_processor.recent_webhook_data),
+        'count': len(webhook_processor.recent_webhook_data)
+    })
 
 @app.route('/stats', methods=['GET'])
 def get_stats():
