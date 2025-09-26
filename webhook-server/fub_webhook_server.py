@@ -130,21 +130,26 @@ class WebhookProcessor:
             return False
 
     def _extract_person_id(self, webhook_data: Dict[str, Any]) -> Optional[str]:
-        """Extract person ID from webhook data with enhanced patterns"""
+        """Extract person ID from webhook data - FUB format"""
 
-        print(f"🔍 DEBUG: Extracting person ID from webhook")
-        print(f"   Webhook keys: {list(webhook_data.keys())}")
-        print(f"   Has resourceIds: {'resourceIds' in webhook_data}")
+        print(f"EXTRACTION DEBUG: Input keys = {list(webhook_data.keys())}")
+
+        # CRITICAL: FUB sends resourceIds array - this MUST work
         if 'resourceIds' in webhook_data:
-            print(f"   resourceIds value: {webhook_data['resourceIds']}")
-            print(f"   resourceIds type: {type(webhook_data['resourceIds'])}")
-
-        # Method 0: FUB resourceIds array (primary format from Railway logs)
-        if 'resourceIds' in webhook_data and isinstance(webhook_data['resourceIds'], list):
             resource_ids = webhook_data['resourceIds']
-            if len(resource_ids) > 0:
+            if isinstance(resource_ids, list) and len(resource_ids) > 0:
+                # Always take the first resource ID
                 person_id = str(resource_ids[0])
-                print(f"✅ SUCCESS: Extracted person ID from resourceIds: {person_id}")
+                print(f"EXTRACTED person ID from resourceIds: {person_id}")
+                return person_id
+            else:
+                print(f"ERROR: resourceIds exists but is not valid list: {resource_ids}")
+
+        # BACKUP: Try URI query parameter extraction
+        if 'uri' in webhook_data and '?id=' in webhook_data['uri']:
+            person_id = webhook_data['uri'].split('?id=')[1].split('&')[0]
+            if person_id and person_id.isdigit():
+                print(f"EXTRACTED person ID from URI: {person_id}")
                 return person_id
 
         # Method 1: URI pattern (both /people/{id}/ and ?id={id} query params)
