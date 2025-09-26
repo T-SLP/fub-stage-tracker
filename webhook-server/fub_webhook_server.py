@@ -193,6 +193,38 @@ class WebhookProcessor:
                 except ValueError:
                     pass
 
+        # Method 10: TEMPORARY WEBHOOK INSPECTOR - Log everything and return ANY numeric ID
+        print(f"🔍 WEBHOOK INSPECTOR - FULL DATA DUMP:")
+        print(f"   Raw JSON: {webhook_data}")
+        print(f"   Keys: {list(webhook_data.keys())}")
+
+        # Deep scan for ANY numeric values that could be IDs
+        def find_all_numeric_values(data, path=""):
+            found_ids = []
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    current_path = f"{path}.{k}" if path else k
+                    if isinstance(v, (int, str)):
+                        try:
+                            num_val = int(v)
+                            if 1000 <= num_val <= 999999:  # Reasonable ID range
+                                found_ids.append((current_path, num_val))
+                        except (ValueError, TypeError):
+                            pass
+                    elif isinstance(v, (dict, list)):
+                        found_ids.extend(find_all_numeric_values(v, current_path))
+            elif isinstance(data, list):
+                for i, item in enumerate(data):
+                    found_ids.extend(find_all_numeric_values(item, f"{path}[{i}]"))
+            return found_ids
+
+        all_ids = find_all_numeric_values(webhook_data)
+        if all_ids:
+            print(f"🎯 FOUND POTENTIAL IDs: {all_ids}")
+            # Return the first reasonable ID we find
+            return str(all_ids[0][1])
+
+        print("❌ NO NUMERIC IDs FOUND IN WEBHOOK")
         return None
 
     def _process_webhook_queue(self):
