@@ -140,8 +140,10 @@ class WebhookProcessor:
                     self.stats['webhooks_processed'] += 1
                     if success:
                         self.stats['stage_changes_captured'] += 1
+                        print(f"✅ SUCCESS: Webhook processed successfully")
                     else:
                         self.stats['webhooks_failed'] += 1
+                        print(f"❌ FAILED: Webhook processing failed")
 
                     # Update success rate
                     if self.stats['webhooks_processed'] > 0:
@@ -167,16 +169,22 @@ class WebhookProcessor:
                 return False
 
             # Get person data from FUB API
+            print(f"🔍 Fetching person data from FUB for ID: {person_id}")
             person_data = self._get_person_from_fub(person_id)
             if not person_data:
                 print(f"❌ Could not fetch person data for ID: {person_id}")
                 return False
+            else:
+                print(f"✅ Retrieved person data: {person_data.get('firstName', 'Unknown')} {person_data.get('lastName', 'Unknown')}")
 
             # Process stage change with enhanced lead source extraction
             return self.process_person_stage_change(person_data, webhook_data.get('event', 'webhookEvent'))
 
         except Exception as e:
             print(f"❌ Error processing webhook: {e}")
+            print(f"🔍 Webhook data: {webhook_data}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def _get_person_from_fub(self, person_id: str) -> Optional[Dict[str, Any]]:
