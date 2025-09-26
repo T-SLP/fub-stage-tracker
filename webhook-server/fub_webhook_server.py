@@ -81,6 +81,7 @@ class WebhookProcessor:
 
         # Debug storage for recent webhook data
         self.recent_webhook_data = deque(maxlen=10)  # Store last 10 webhooks for debugging
+        self.last_webhook_inspection = None  # Store most recent inspection result
 
     def add_webhook_to_queue(self, webhook_data: Dict[str, Any]) -> bool:
         """Add webhook to processing queue with deduplication"""
@@ -194,6 +195,13 @@ class WebhookProcessor:
                     pass
 
         # Method 10: TEMPORARY WEBHOOK INSPECTOR - Log everything and return ANY numeric ID
+        inspection_result = {
+            'raw_json': webhook_data,
+            'keys': list(webhook_data.keys()),
+            'found_ids': [],
+            'timestamp': datetime.datetime.utcnow().isoformat()
+        }
+
         print(f"🔍 WEBHOOK INSPECTOR - FULL DATA DUMP:")
         print(f"   Raw JSON: {webhook_data}")
         print(f"   Keys: {list(webhook_data.keys())}")
@@ -219,6 +227,11 @@ class WebhookProcessor:
             return found_ids
 
         all_ids = find_all_numeric_values(webhook_data)
+        inspection_result['found_ids'] = all_ids
+
+        # Store for debug endpoint access
+        self.last_webhook_inspection = inspection_result
+
         if all_ids:
             print(f"🎯 FOUND POTENTIAL IDs: {all_ids}")
             # Return the first reasonable ID we find
@@ -489,6 +502,14 @@ def debug_webhook_data():
     return jsonify({
         'recent_webhooks': list(webhook_processor.recent_webhook_data),
         'count': len(webhook_processor.recent_webhook_data)
+    })
+
+@app.route('/debug/inspection', methods=['GET'])
+def debug_last_inspection():
+    """Debug endpoint to show last webhook inspection result"""
+    return jsonify({
+        'last_inspection': webhook_processor.last_webhook_inspection,
+        'has_data': webhook_processor.last_webhook_inspection is not None
     })
 
 @app.route('/stats', methods=['GET'])
