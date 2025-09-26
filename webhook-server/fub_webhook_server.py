@@ -75,15 +75,9 @@ class WebhookProcessor:
             'webhook_rate_per_hour': 0.0
         }
 
-        # Start background processing
-        self.processing_thread = threading.Thread(target=self._process_webhook_queue, daemon=True)
-        self.processing_thread.start()
-
-        # Start cleanup thread
-        self.cleanup_thread = threading.Thread(target=self._cleanup_tracking_data, daemon=True)
-        self.cleanup_thread.start()
-
-        print("🚀 Enhanced Webhook processor started with lead source extraction")
+        # REMOVED THREADING - Using synchronous processing to fix Railway issues
+        # Background threads were causing webhooks to be ignored on Railway
+        print("🚀 SYNCHRONOUS Webhook processor started - FIXED THREADING ISSUES")
 
     def add_webhook_to_queue(self, webhook_data: Dict[str, Any]) -> bool:
         """Add webhook to processing queue with deduplication"""
@@ -399,7 +393,7 @@ def get_stats():
 
 @app.route('/webhook/fub/stage-change', methods=['POST'])
 def handle_fub_stage_webhook():
-    """Handle FUB stage change webhooks"""
+    """Handle FUB stage change webhooks - SYNCHRONOUS PROCESSING"""
     try:
         webhook_data = request.get_json()
         if not webhook_data:
@@ -407,26 +401,48 @@ def handle_fub_stage_webhook():
 
         event_type = webhook_data.get('event', 'unknown')
         person_id = webhook_processor._extract_person_id(webhook_data)
-        print(f"📡 Incoming webhook: {event_type} for person {person_id}")
+        print(f"📡 SYNC PROCESSING: {event_type} for person {person_id}")
 
-        success = webhook_processor.add_webhook_to_queue(webhook_data)
+        # BYPASS QUEUE - Process immediately to avoid threading issues
+        webhook_processor.stats['webhooks_received'] += 1
+        webhook_processor.stats['last_webhook_time'] = datetime.datetime.utcnow()
 
-        if success:
-            return jsonify({
-                'status': 'accepted',
-                'message': 'Webhook queued for processing with enhanced lead source extraction',
-                'queue_size': len(webhook_processor.webhook_queue)
-            }), 200
-        else:
+        if not person_id:
+            print(f"⚠️  No person ID in webhook: {webhook_data.get('uri', 'no URI')}")
+            webhook_processor.stats['webhooks_ignored'] += 1
             return jsonify({
                 'status': 'rejected',
-                'message': 'Webhook rejected (duplicate or invalid)'
+                'message': 'No person ID found'
+            }), 400
+
+        # Process immediately instead of queuing
+        print(f"🚀 PROCESSING IMMEDIATELY: {person_id}")
+        success = webhook_processor._process_single_webhook(webhook_data)
+
+        webhook_processor.stats['webhooks_processed'] += 1
+        if success:
+            webhook_processor.stats['stage_changes_captured'] += 1
+            print(f"✅ IMMEDIATE SUCCESS: Webhook processed")
+            return jsonify({
+                'status': 'processed',
+                'message': 'Webhook processed SYNCHRONOUSLY - threading bypassed',
+                'success': True
+            }), 200
+        else:
+            webhook_processor.stats['webhooks_failed'] += 1
+            print(f"❌ IMMEDIATE FAILURE: Webhook processing failed")
+            return jsonify({
+                'status': 'failed',
+                'message': 'Webhook processing failed',
+                'success': False
             }), 200
 
     except Exception as e:
         print(f"❌ Webhook handling error: {e}")
         webhook_processor.stats['errors'] += 1
-        return jsonify({'error': 'Internal server error'}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 @app.route('/', methods=['GET'])
 def root():
