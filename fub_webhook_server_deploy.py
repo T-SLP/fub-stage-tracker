@@ -446,7 +446,7 @@ def root():
     return jsonify({
         'service': 'FUB Webhook Server',
         'status': 'running',
-        'version': '2.1-test-deployment',
+        'version': '2.2-synchronous-fix-hobby',
         'message': 'Enhanced lead source processing active',
         'endpoints': [
             '/health',
