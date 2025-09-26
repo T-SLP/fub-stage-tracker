@@ -14,7 +14,9 @@
       "WebFetch(domain:railway.app)",
       "WebFetch(domain:railway.com)",
       "Read(//c/Users/troge/**)",
-      "WebFetch(domain:fub-stage-tracker-production.up.railway.app)"
+      "WebFetch(domain:fub-stage-tracker-production.up.railway.app)",
+      "Bash(python3:*)",
+      "Bash(git log:*)"
     ],
     "deny": [],
     "ask": []
