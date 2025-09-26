@@ -132,11 +132,25 @@ class WebhookProcessor:
     def _extract_person_id(self, webhook_data: Dict[str, Any]) -> Optional[str]:
         """Extract person ID from webhook data with enhanced patterns"""
 
-        # Method 1: URI pattern /people/{id}/
-        if 'uri' in webhook_data and '/people/' in webhook_data['uri']:
-            person_id = webhook_data['uri'].split('/people/')[-1].split('/')[0]
-            if person_id and person_id.isdigit():
-                return person_id
+        # Method 0: FUB resourceIds array (primary format from Railway logs)
+        if 'resourceIds' in webhook_data and isinstance(webhook_data['resourceIds'], list):
+            resource_ids = webhook_data['resourceIds']
+            if len(resource_ids) > 0:
+                return str(resource_ids[0])
+
+        # Method 1: URI pattern (both /people/{id}/ and ?id={id} query params)
+        if 'uri' in webhook_data:
+            uri = webhook_data['uri']
+            # Try /people/{id}/ pattern first
+            if '/people/' in uri:
+                person_id = uri.split('/people/')[-1].split('/')[0]
+                if person_id and person_id.isdigit():
+                    return person_id
+            # Try ?id={id} query parameter (FUB format from logs)
+            if '?id=' in uri:
+                person_id = uri.split('?id=')[1].split('&')[0]
+                if person_id and person_id.isdigit():
+                    return person_id
 
         # Method 2: Direct personId field
         if 'personId' in webhook_data:
