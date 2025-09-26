@@ -585,11 +585,12 @@ def root():
     })
 
 if __name__ == '__main__':
-    print("🚀 FUB Webhook Server v2.1 - Enhanced Lead Source Processing")
+    print("🚀 FUB Webhook Server v2.2 - SYNCHRONOUS Processing (FORCE DEPLOY)")
     print(f"📡 Webhook endpoint: {WEBHOOK_BASE_URL}/webhook/fub/stage-change")
     print(f"🔗 FUB API configured: {'✅' if FUB_API_KEY else '❌'}")
     print(f"💾 Database configured: {'✅' if SUPABASE_DB_URL else '❌'}")
-    print("🎯 Enhanced features: Lead source extraction, race condition protection, deduplication")
+    print("🎯 CRITICAL FIX: Synchronous processing, no threading, direct webhook processing")
+    print("🔧 DEPLOYMENT: This version MUST deploy to fix webhook processing!")
 
     port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
