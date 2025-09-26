@@ -86,12 +86,18 @@ class WebhookProcessor:
                 self.stats['webhooks_received'] += 1
                 self.stats['last_webhook_time'] = datetime.datetime.utcnow()
 
-                # Extract person ID
+                # Extract person ID with enhanced logging
+                print(f"🔍 RAW WEBHOOK DATA: {webhook_data}")
                 person_id = self._extract_person_id(webhook_data)
                 if not person_id:
-                    print(f"⚠️  No person ID in webhook: {webhook_data.get('uri', 'no URI')}")
+                    print(f"⚠️  No person ID extracted from webhook")
+                    print(f"   URI: {webhook_data.get('uri', 'no URI')}")
+                    print(f"   Keys: {list(webhook_data.keys())}")
+                    print(f"   Data keys: {list(webhook_data.get('data', {}).keys()) if 'data' in webhook_data else 'no data key'}")
                     self.stats['webhooks_ignored'] += 1
                     return False
+                else:
+                    print(f"✅ Person ID extracted: {person_id}")
 
                 # Deduplication logic
                 current_time = time.time()
