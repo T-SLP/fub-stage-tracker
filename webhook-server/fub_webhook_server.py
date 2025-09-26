@@ -168,6 +168,31 @@ class WebhookProcessor:
             if 'id' in webhook_data['subject']:
                 return str(webhook_data['subject']['id'])
 
+        # Method 8: event field structure (FUB event-based webhooks)
+        if 'event' in webhook_data:
+            event_data = webhook_data['event']
+            if isinstance(event_data, dict):
+                # Try event.person.id
+                if 'person' in event_data and isinstance(event_data['person'], dict):
+                    if 'id' in event_data['person']:
+                        return str(event_data['person']['id'])
+                # Try event.id directly
+                if 'id' in event_data:
+                    return str(event_data['id'])
+
+        # Method 9: First-level scan for any field containing person ID patterns
+        for key, value in webhook_data.items():
+            if key.lower() in ['person_id', 'personid', 'contact_id', 'contactid', 'lead_id', 'leadid']:
+                return str(value)
+            # Look for numeric ID values that could be person IDs (typical range 1000-999999)
+            if key.lower() == 'id' and isinstance(value, (int, str)):
+                try:
+                    id_num = int(value)
+                    if 1000 <= id_num <= 999999:  # Reasonable person ID range
+                        return str(id_num)
+                except ValueError:
+                    pass
+
         return None
 
     def _process_webhook_queue(self):
