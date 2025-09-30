@@ -758,21 +758,38 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     availableCampaigns.push('No Campaign');
   }
 
-  // Calculate campaign metrics (from requested period only) 
+  // Calculate campaign metrics (from requested period only)
   const campaignCounts = {};
   requestedPeriodChanges.forEach(change => {
-    if (change.stage_to === 'ACQ - Qualified') {
-      const campaign = change.campaign_id || 'No Campaign';
-      campaignCounts[campaign] = (campaignCounts[campaign] || 0) + 1;
+    const campaign = change.campaign_id || 'No Campaign';
+
+    if (!campaignCounts[campaign]) {
+      campaignCounts[campaign] = {
+        qualified: 0,
+        offers: 0,
+        priceMotivated: 0,
+        leads: 0
+      };
     }
+
+    if (change.stage_to === 'ACQ - Qualified') {
+      campaignCounts[campaign].qualified++;
+    } else if (change.stage_to === 'ACQ - Offers Made') {
+      campaignCounts[campaign].offers++;
+    } else if (change.stage_to === 'ACQ - Price Motivated') {
+      campaignCounts[campaign].priceMotivated++;
+    }
+
+    // Count all stage changes as "leads" for this campaign
+    campaignCounts[campaign].leads++;
   });
 
-  const campaignMetrics = Object.entries(campaignCounts).map(([campaign, qualified]) => ({
+  const campaignMetrics = Object.entries(campaignCounts).map(([campaign, counts]) => ({
     campaign,
-    qualified,
-    offers: 0,
-    priceMotivated: 0,
-    leads: 0
+    qualified: counts.qualified,
+    offers: counts.offers,
+    priceMotivated: counts.priceMotivated,
+    leads: counts.leads
   }));
 
   // Calculate lead source metrics INTEGRATED with main data (no separate API call)

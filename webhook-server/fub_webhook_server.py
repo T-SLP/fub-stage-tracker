@@ -326,8 +326,13 @@ class WebhookProcessor:
             import base64
             auth_string = base64.b64encode(f'{FUB_API_KEY}:'.encode()).decode()
 
+            # CRITICAL: FUB API requires ?fields= parameter to return custom fields
+            # Without this, custom fields return as None even if populated in FUB
+            # We need to request both standard fields AND custom fields explicitly
+            fields_param = 'id,firstName,lastName,stage,tags,customCampaignID,customWhoPushedTheLead,customParcelCounty,customParcelState'
+
             response = requests.get(
-                f'https://api.followupboss.com/v1/people/{person_id}',
+                f'https://api.followupboss.com/v1/people/{person_id}?fields={fields_param}',
                 headers={
                     'Authorization': f'Basic {auth_string}',
                     'X-System': 'SynergyFUBLeadMetrics',
@@ -339,7 +344,16 @@ class WebhookProcessor:
 
             if response.status_code == 200:
                 data = response.json()
-                return data.get('person', data)
+                person = data.get('person', data)
+
+                # Log campaign ID capture for debugging
+                campaign_id = person.get('customCampaignID')
+                if campaign_id:
+                    print(f"✅ Campaign ID captured: {campaign_id}")
+                else:
+                    print(f"⚠️  No Campaign ID for person {person_id}")
+
+                return person
             else:
                 print(f"❌ FUB API error {response.status_code} for person {person_id}")
                 return None
