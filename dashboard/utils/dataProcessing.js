@@ -784,13 +784,16 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
     campaignCounts[campaign].leads++;
   });
 
-  const campaignMetrics = Object.entries(campaignCounts).map(([campaign, counts]) => ({
-    campaign,
-    qualified: counts.qualified,
-    offers: counts.offers,
-    priceMotivated: counts.priceMotivated,
-    leads: counts.leads
-  }));
+  const campaignMetrics = Object.entries(campaignCounts)
+    .map(([campaign, counts]) => ({
+      campaign,
+      qualified: counts.qualified,
+      offers: counts.offers,
+      priceMotivated: counts.priceMotivated,
+      leads: counts.leads
+    }))
+    .filter(campaign => campaign.qualified > 0)  // Only show campaigns with qualified leads
+    .sort((a, b) => b.qualified - a.qualified);  // Sort by qualified count (highest first)
 
   // Calculate lead source metrics INTEGRATED with main data (no separate API call)
   console.log('✅ USING INTEGRATED LEAD SOURCE CALCULATION - NOT separate API call');
