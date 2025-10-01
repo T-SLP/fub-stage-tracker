@@ -112,7 +112,7 @@ class WebhookProcessor:
                 person_webhooks = self.person_webhook_tracking[person_id]
                 person_webhooks[:] = [t for t in person_webhooks if current_time - t < self.webhook_dedup_window]
 
-                if len(person_webhooks) >= 2:
+                if len(person_webhooks) >= 1:
                     print(f"🔄 Deduplicating rapid webhook for person {person_id}")
                     self.stats['webhooks_deduplicated'] += 1
                     return False
