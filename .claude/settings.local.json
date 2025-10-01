@@ -23,7 +23,9 @@
       "Bash(export SMTP_PORT=587)",
       "Bash(export ALERT_EMAIL_ADDRESS=travis@synergylandpartners.com)",
       "Bash(export ALERT_EMAIL_PASSWORD=\"yckr awfu wead wbeu\")",
-      "Bash(export ALERT_RECIPIENT=contact@synergylandpartners.com)"
+      "Bash(export ALERT_RECIPIENT=contact@synergylandpartners.com)",
+      "WebFetch(domain:fub-stage-tracker.vercel.app)",
+      "Bash(vercel env:*)"
     ],
     "deny": [],
     "ask": []

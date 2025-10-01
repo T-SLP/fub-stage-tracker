@@ -409,6 +409,25 @@ class WebhookProcessor:
 
                     print(f"🎯 STAGE CHANGE DETECTED for {person_name}: {last_recorded_stage or 'NEW'} → {current_stage}")
 
+                    # DUPLICATE PROTECTION: Check if this exact transition happened within the last second
+                    # This is a safety net in case webhook deduplication fails
+                    cur.execute("""
+                        SELECT id, changed_at
+                        FROM stage_changes
+                        WHERE person_id = %s
+                        AND COALESCE(stage_from, 'NULL') = COALESCE(%s, 'NULL')
+                        AND stage_to = %s
+                        AND changed_at >= NOW() - INTERVAL '1 second'
+                        LIMIT 1
+                    """, (person_id, last_recorded_stage, current_stage))
+
+                    recent_duplicate = cur.fetchone()
+                    if recent_duplicate:
+                        print(f"🛡️  DUPLICATE BLOCKED: Same transition detected within 1 second for {person_name}")
+                        print(f"   Existing record at: {recent_duplicate['changed_at']}")
+                        conn.rollback()
+                        return False
+
                     # Insert new stage change record with lead source
                     cur.execute("""
                         INSERT INTO stage_changes (
