@@ -32,7 +32,7 @@ def extract_lead_source_tag(tags):
     """
     Extract lead source tag from tags array
     Returns 'ReadyMode', 'Roor', 'Smarter Contact', or None
-    Database keeps granular tags; dashboard groups Roor and Smarter Contact as "Text Leads"
+    Database keeps granular tags; dashboard groups Roor and Smarter Contact as "Text Lead"
     """
     if not tags or not isinstance(tags, list):
         return None

@@ -751,9 +751,9 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
         }
       }
 
-      // Group Roor and Smarter Contact as "Text Leads" for display
+      // Group Roor and Smarter Contact as "Text Lead" for display
       if (leadSource === 'Roor' || leadSource === 'Smarter Contact') {
-        leadSource = 'Text Leads';
+        leadSource = 'Text Lead';
       }
 
       return {
@@ -837,9 +837,9 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
         }
       }
 
-      // Group Roor and Smarter Contact together as "Text Leads" for display
+      // Group Roor and Smarter Contact together as "Text Lead" for display
       if (source === 'Roor' || source === 'Smarter Contact') {
-        source = 'Text Leads';
+        source = 'Text Lead';
       }
 
       console.log(`🔍 LEAD SOURCE DEBUG: ${change.first_name} ${change.last_name} - lead_source_tag: "${change.lead_source_tag}" -> using: "${source}"`);
