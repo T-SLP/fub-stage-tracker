@@ -30,8 +30,9 @@ app = Flask(__name__)
 
 def extract_lead_source_tag(tags):
     """
-    Extract lead source tag from tags array - only Roor and ReadyMode
-    Returns 'ReadyMode', 'Roor', or None
+    Extract lead source tag from tags array
+    Returns 'ReadyMode', 'Roor', 'Smarter Contact', or None
+    Database keeps granular tags; dashboard groups Roor and Smarter Contact as "Text Leads"
     """
     if not tags or not isinstance(tags, list):
         return None
@@ -44,10 +45,15 @@ def extract_lead_source_tag(tags):
         if 'readymode' in tag or 'ready mode' in tag or 'ready-mode' in tag:
             return "ReadyMode"
 
-    # Check for Roor variations
+    # Check for Roor variations - keep as "Roor" in database
     for tag in tags_lower:
         if 'roor' in tag:
             return "Roor"
+
+    # Check for Smarter Contact variations - keep as "Smarter Contact" in database
+    for tag in tags_lower:
+        if 'smarter contact' in tag or 'smartercontact' in tag or 'smarter-contact' in tag:
+            return "Smarter Contact"
 
     return None
 

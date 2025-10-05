@@ -728,24 +728,44 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
       // Show bar chart stages OR throwaway lead transitions
       const isBarChartStage = barChartStages.includes(change.stage_to);
       const isThrowaway = isThrowawayLead(change);
-      
+
       // Debug: log what's being filtered
       if (!isBarChartStage && !isThrowaway) {
         console.log('🚫 Filtered out stage:', change.stage_to, 'from:', change.stage_from);
       }
-      
+
       return isBarChartStage || isThrowaway;
     })
     .slice(0, 100)
-    .map(change => ({
-      name: `${change.first_name || 'Unknown'} ${change.last_name || ''}`.trim(),
-      stage: isThrowawayLead(change) ? 'Throwaway Lead' : change.stage_to,
-      actual_stage: change.stage_to,  // Keep original stage for reference
-      campaign_code: change.campaign_id || 'No Campaign',
-      lead_source: change.lead_source_tag || 'Unknown',
-      created_at: change.changed_at,
-      previous_stage: change.stage_from || 'Unknown'
-    }));
+    .map(change => {
+      // Determine lead source with fallback for NULL values
+      let leadSource = change.lead_source_tag;
+
+      // Fallback for NULL lead sources - likely Smarter Contact
+      if (!leadSource || leadSource === 'null') {
+        const campaignId = change.campaign_id || '';
+        if (campaignId.includes('GA') || campaignId.includes('NC')) {
+          leadSource = 'Smarter Contact';
+        } else {
+          leadSource = 'Unknown';
+        }
+      }
+
+      // Group Roor and Smarter Contact as "Text Leads" for display
+      if (leadSource === 'Roor' || leadSource === 'Smarter Contact') {
+        leadSource = 'Text Leads';
+      }
+
+      return {
+        name: `${change.first_name || 'Unknown'} ${change.last_name || ''}`.trim(),
+        stage: isThrowawayLead(change) ? 'Throwaway Lead' : change.stage_to,
+        actual_stage: change.stage_to,  // Keep original stage for reference
+        campaign_code: change.campaign_id || 'No Campaign',
+        lead_source: leadSource,
+        created_at: change.changed_at,
+        previous_stage: change.stage_from || 'Unknown'
+      };
+    });
 
   // Get unique campaigns for filter dropdown (from requested period)
   const availableCampaigns = [...new Set(requestedPeriodChanges
@@ -807,15 +827,19 @@ export const processSupabaseData = (stageChanges, startDate, endDate, businessDa
         const campaignId = change.campaign_id || '';
         console.log(`🔍 NULL FALLBACK: ${change.first_name} ${change.last_name} - campaign_id: "${campaignId}"`);
 
-        // Classify based on campaign patterns
+        // Classify based on campaign patterns - these are likely Smarter Contact leads
         if (campaignId.includes('GA') || campaignId.includes('NC')) {
-          // Assume GA (Georgia) and NC (North Carolina) campaigns are Roor
-          source = 'Roor';
-          console.log(`✅ FALLBACK CLASSIFICATION: ${change.first_name} ${change.last_name} -> Roor (campaign: ${campaignId})`);
+          source = 'Smarter Contact';
+          console.log(`✅ FALLBACK CLASSIFICATION: ${change.first_name} ${change.last_name} -> Smarter Contact (campaign: ${campaignId})`);
         } else {
           source = 'Unknown';
           console.log(`⚠️ STILL UNKNOWN: ${change.first_name} ${change.last_name} - campaign: "${campaignId}"`);
         }
+      }
+
+      // Group Roor and Smarter Contact together as "Text Leads" for display
+      if (source === 'Roor' || source === 'Smarter Contact') {
+        source = 'Text Leads';
       }
 
       console.log(`🔍 LEAD SOURCE DEBUG: ${change.first_name} ${change.last_name} - lead_source_tag: "${change.lead_source_tag}" -> using: "${source}"`);
