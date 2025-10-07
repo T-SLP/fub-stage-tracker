@@ -123,8 +123,8 @@ def get_campaign_stats() -> List[Dict]:
             'listed_on_market_pct': round(100.0 * stats['listed_on_market'] / total, 2) if total > 0 else 0
         })
 
-    # Sort by total leads descending
-    results.sort(key=lambda x: x['total_leads'], reverse=True)
+    # Sort alphabetically and sequentially by campaign ID
+    results.sort(key=lambda x: x['campaign_id'])
 
     return results
 
