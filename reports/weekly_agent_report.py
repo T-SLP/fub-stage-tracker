@@ -202,9 +202,15 @@ def query_call_metrics(start_date: datetime, end_date: datetime, user_ids: Dict[
         }
 
     # Group calls by userId and calculate metrics
+    # FUB definitions:
+    # - Calls Made = Outgoing calls only (isIncoming=False)
+    # - Connected = Calls with duration >= 60 seconds
+    # - Conversations = Outgoing calls with duration >= 60 seconds
     for call in all_calls:
         call_user_id = call.get('userId')
         call_user_name = call.get('userName')
+        is_outgoing = call.get('isIncoming') == False
+        duration = call.get('duration', 0) or 0
 
         # Try to match by userId first, then by userName
         agent_name = None
@@ -214,13 +220,21 @@ def query_call_metrics(start_date: datetime, end_date: datetime, user_ids: Dict[
             agent_name = call_user_name
 
         if agent_name and agent_name in call_metrics:
-            call_metrics[agent_name]['calls'] += 1
-            duration = call.get('duration', 0) or 0
-            if duration > 0:
-                call_metrics[agent_name]['connected'] += 1
-                call_metrics[agent_name]['talk_time_min'] += duration
+            # Only count outgoing calls as "Calls Made"
+            if is_outgoing:
+                call_metrics[agent_name]['calls'] += 1
+
+            # Connected = duration >= 60 seconds (any call)
             if duration >= 60:
+                call_metrics[agent_name]['connected'] += 1
+
+            # Conversations = outgoing calls with duration >= 60 seconds
+            if is_outgoing and duration >= 60:
                 call_metrics[agent_name]['conversations'] += 1
+
+            # Talk time includes all calls with duration
+            if duration > 0:
+                call_metrics[agent_name]['talk_time_min'] += duration
 
     # Convert total duration from seconds to minutes
     for agent_name in call_metrics:
