@@ -14,8 +14,18 @@ import sys
 import argparse
 import base64
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional
+from pathlib import Path
+
+# Load .env file from project root (for local development)
+try:
+    from dotenv import load_dotenv
+    # Look for .env in parent directory (project root)
+    env_path = Path(__file__).resolve().parent.parent / '.env'
+    load_dotenv(env_path)
+except ImportError:
+    pass  # dotenv not required in production (GitHub Actions)
 
 import psycopg2
 import psycopg2.extras
@@ -41,7 +51,7 @@ TRACKED_STAGES = [
 
 def get_date_range(days_back: int = 7) -> tuple[datetime, datetime]:
     """Calculate the date range for the report."""
-    end_date = datetime.utcnow()
+    end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days_back)
     return start_date, end_date
 
@@ -123,31 +133,36 @@ def get_fub_users() -> Dict[str, int]:
         return {}
 
 
-def query_call_metrics(start_date: datetime, end_date: datetime, user_ids: Dict[str, int]) -> Dict[str, int]:
+def query_call_metrics(start_date: datetime, end_date: datetime, user_ids: Dict[str, int]) -> Dict[str, Dict[str, Any]]:
     """
-    Query FUB API for call counts per agent.
-    Returns: {agent_name: call_count, ...}
+    Query FUB API for detailed call metrics per agent.
+    Note: FUB API doesn't filter by userId, so we fetch all calls and group client-side.
+    Returns: {agent_name: {calls: int, connected: int, conversations: int, talk_time_min: int}, ...}
     """
     if not FUB_API_KEY or not user_ids:
         return {}
 
     auth_string = base64.b64encode(f'{FUB_API_KEY}:'.encode()).decode()
-    call_counts = {}
 
     # Format dates for FUB API
     start_str = start_date.strftime('%Y-%m-%d')
     end_str = end_date.strftime('%Y-%m-%d')
 
-    for user_name, user_id in user_ids.items():
+    # Fetch ALL calls for the date range (API doesn't filter by userId)
+    all_calls = []
+    offset = 0
+    limit = 100
+
+    print("  Fetching all calls from FUB API...")
+    while True:
         try:
-            # Query calls for this user within date range
             response = requests.get(
                 'https://api.followupboss.com/v1/calls',
                 params={
-                    'userId': user_id,
                     'createdAfter': start_str,
                     'createdBefore': end_str,
-                    'limit': 1000  # Get count via pagination metadata if available
+                    'limit': limit,
+                    'offset': offset
                 },
                 headers={
                     'Authorization': f'Basic {auth_string}',
@@ -159,27 +174,64 @@ def query_call_metrics(start_date: datetime, end_date: datetime, user_ids: Dict[
             if response.status_code == 200:
                 data = response.json()
                 calls = data.get('calls', [])
-                call_counts[user_name] = len(calls)
+                all_calls.extend(calls)
 
-                # Check if there are more pages (pagination)
-                metadata = data.get('_metadata', {})
-                total = metadata.get('total')
-                if total is not None:
-                    call_counts[user_name] = total
+                if len(calls) < limit:
+                    break
+                offset += limit
             else:
-                print(f"WARNING: Failed to fetch calls for {user_name}: {response.status_code}")
-                call_counts[user_name] = 0
-
+                print(f"WARNING: Failed to fetch calls: {response.status_code}")
+                break
         except Exception as e:
-            print(f"WARNING: Error fetching calls for {user_name}: {e}")
-            call_counts[user_name] = 0
+            print(f"WARNING: Error fetching calls: {e}")
+            break
 
-    return call_counts
+    print(f"  Total calls fetched: {len(all_calls)}")
+
+    # Build reverse lookup: userId -> userName
+    user_id_to_name = {v: k for k, v in user_ids.items()}
+
+    # Initialize metrics for all users
+    call_metrics = {}
+    for user_name in user_ids.keys():
+        call_metrics[user_name] = {
+            'calls': 0,
+            'connected': 0,
+            'conversations': 0,
+            'talk_time_min': 0
+        }
+
+    # Group calls by userId and calculate metrics
+    for call in all_calls:
+        call_user_id = call.get('userId')
+        call_user_name = call.get('userName')
+
+        # Try to match by userId first, then by userName
+        agent_name = None
+        if call_user_id in user_id_to_name:
+            agent_name = user_id_to_name[call_user_id]
+        elif call_user_name in user_ids:
+            agent_name = call_user_name
+
+        if agent_name and agent_name in call_metrics:
+            call_metrics[agent_name]['calls'] += 1
+            duration = call.get('duration', 0) or 0
+            if duration > 0:
+                call_metrics[agent_name]['connected'] += 1
+                call_metrics[agent_name]['talk_time_min'] += duration
+            if duration >= 60:
+                call_metrics[agent_name]['conversations'] += 1
+
+    # Convert total duration from seconds to minutes
+    for agent_name in call_metrics:
+        call_metrics[agent_name]['talk_time_min'] = call_metrics[agent_name]['talk_time_min'] // 60
+
+    return call_metrics
 
 
 def write_to_google_sheets(
     stage_metrics: Dict[str, Dict[str, int]],
-    call_metrics: Dict[str, int],
+    call_metrics: Dict[str, Dict[str, Any]],
     start_date: datetime,
     end_date: datetime
 ) -> str:
@@ -215,10 +267,10 @@ def write_to_google_sheets(
     # Check if tab already exists, if so add a timestamp
     existing_tabs = [ws.title for ws in spreadsheet.worksheets()]
     if tab_name in existing_tabs:
-        tab_name = f"{tab_name} ({datetime.utcnow().strftime('%H%M')})"
+        tab_name = f"{tab_name} ({datetime.now(timezone.utc).strftime('%H%M')})"
 
     # Create new worksheet
-    worksheet = spreadsheet.add_worksheet(title=tab_name, rows=100, cols=10)
+    worksheet = spreadsheet.add_worksheet(title=tab_name, rows=100, cols=15)
 
     # Prepare header row
     headers = [
@@ -227,7 +279,10 @@ def write_to_google_sheets(
         "Contracts Sent",
         "Under Contract",
         "Closed",
-        "Total Calls"
+        "Total Calls",
+        "Connected",
+        "Conversations",
+        "Talk Time (min)"
     ]
 
     # Prepare data rows
@@ -242,9 +297,14 @@ def write_to_google_sheets(
         contracts = stage_data.get("ACQ - Contract Sent", 0)
         under_contract = stage_data.get("ACQ - Under Contract", 0)
         closed = stage_data.get("Closed", 0) + stage_data.get("ACQ - Closed Won", 0)
-        calls = call_metrics.get(agent, 0)
 
-        rows.append([agent, offers, contracts, under_contract, closed, calls])
+        call_data = call_metrics.get(agent, {})
+        calls = call_data.get('calls', 0)
+        connected = call_data.get('connected', 0)
+        conversations = call_data.get('conversations', 0)
+        talk_time = call_data.get('talk_time_min', 0)
+
+        rows.append([agent, offers, contracts, under_contract, closed, calls, connected, conversations, talk_time])
 
     # Add unassigned row at the end if it exists
     if 'Unassigned' in stage_metrics:
@@ -253,18 +313,18 @@ def write_to_google_sheets(
         contracts = stage_data.get("ACQ - Contract Sent", 0)
         under_contract = stage_data.get("ACQ - Under Contract", 0)
         closed = stage_data.get("Closed", 0) + stage_data.get("ACQ - Closed Won", 0)
-        rows.append(["Unassigned", offers, contracts, under_contract, closed, 0])
+        rows.append(["Unassigned", offers, contracts, under_contract, closed, 0, 0, 0, 0])
 
     # Add report metadata at the bottom
     rows.append([])
-    rows.append(["Report Generated:", datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')])
+    rows.append(["Report Generated:", datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')])
     rows.append(["Date Range:", f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"])
 
     # Write all data
     worksheet.update(rows, 'A1')
 
     # Format header row (bold)
-    worksheet.format('A1:F1', {'textFormat': {'bold': True}})
+    worksheet.format('A1:I1', {'textFormat': {'bold': True}})
 
     return f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEET_ID}/edit#gid={worksheet.id}"
 
@@ -306,13 +366,13 @@ def main():
 
     if args.dry_run:
         # Print to console instead of writing to sheets
-        print("\n" + "=" * 60)
+        print("\n" + "=" * 100)
         print("AGENT PERFORMANCE REPORT (DRY RUN)")
         print(f"Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
-        print("=" * 60)
+        print("=" * 100)
 
-        print(f"\n{'Agent':<25} {'Offers':<8} {'Contracts':<10} {'Under K':<9} {'Closed':<8} {'Calls':<8}")
-        print("-" * 68)
+        print(f"\n{'Agent':<20} {'Offers':<7} {'Contracts':<10} {'Under K':<8} {'Closed':<7} {'Calls':<7} {'Connect':<8} {'Convos':<7} {'Talk(m)':<8}")
+        print("-" * 92)
 
         all_agents = set(stage_metrics.keys()) | set(call_metrics.keys())
         for agent in sorted(all_agents):
@@ -321,9 +381,14 @@ def main():
             contracts = stage_data.get("ACQ - Contract Sent", 0)
             under_contract = stage_data.get("ACQ - Under Contract", 0)
             closed = stage_data.get("Closed", 0) + stage_data.get("ACQ - Closed Won", 0)
-            calls = call_metrics.get(agent, 0)
 
-            print(f"{agent:<25} {offers:<8} {contracts:<10} {under_contract:<9} {closed:<8} {calls:<8}")
+            call_data = call_metrics.get(agent, {})
+            calls = call_data.get('calls', 0)
+            connected = call_data.get('connected', 0)
+            conversations = call_data.get('conversations', 0)
+            talk_time = call_data.get('talk_time_min', 0)
+
+            print(f"{agent:<20} {offers:<7} {contracts:<10} {under_contract:<8} {closed:<7} {calls:<7} {connected:<8} {conversations:<7} {talk_time:<8}")
 
         print("\n(Dry run - no data written to Google Sheets)")
     else:
