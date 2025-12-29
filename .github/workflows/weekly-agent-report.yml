@@ -1,0 +1,42 @@
+name: Weekly Agent Report
+
+on:
+  # Run every Friday at 5 PM Eastern (10 PM UTC in winter, 9 PM UTC in summer)
+  # Using 10 PM UTC to ensure it's after 5 PM Eastern year-round
+  schedule:
+    - cron: '0 22 * * 5'
+
+  # Allow manual trigger from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Number of days to include in report'
+        required: false
+        default: '7'
+        type: string
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r reports/requirements.txt
+
+      - name: Generate agent report
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          FUB_API_KEY: ${{ secrets.FUB_API_KEY }}
+          GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+        run: |
+          python reports/weekly_agent_report.py --days ${{ github.event.inputs.days || '7' }}

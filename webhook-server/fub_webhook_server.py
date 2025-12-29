@@ -30,8 +30,9 @@ app = Flask(__name__)
 
 def extract_lead_source_tag(tags):
     """
-    Extract lead source tag from tags array - only Roor and ReadyMode
-    Returns 'ReadyMode', 'Roor', or None
+    Extract lead source tag from tags array
+    Returns 'ReadyMode', 'Roor', 'Smarter Contact', or None
+    Database keeps granular tags; dashboard groups Roor and Smarter Contact as "Text Lead"
     """
     if not tags or not isinstance(tags, list):
         return None
@@ -44,10 +45,15 @@ def extract_lead_source_tag(tags):
         if 'readymode' in tag or 'ready mode' in tag or 'ready-mode' in tag:
             return "ReadyMode"
 
-    # Check for Roor variations
+    # Check for Roor variations - keep as "Roor" in database
     for tag in tags_lower:
         if 'roor' in tag:
             return "Roor"
+
+    # Check for Smarter Contact variations - keep as "Smarter Contact" in database
+    for tag in tags_lower:
+        if 'smarter contact' in tag or 'smartercontact' in tag or 'smarter-contact' in tag:
+            return "Smarter Contact"
 
     return None
 
@@ -329,7 +335,8 @@ class WebhookProcessor:
             # CRITICAL: FUB API requires ?fields= parameter to return custom fields
             # Without this, custom fields return as None even if populated in FUB
             # We need to request both standard fields AND custom fields explicitly
-            fields_param = 'id,firstName,lastName,stage,tags,customCampaignID,customWhoPushedTheLead,customParcelCounty,customParcelState'
+            # assignedUserId and assignedTo capture the agent assigned at time of stage change
+            fields_param = 'id,firstName,lastName,stage,tags,assignedUserId,assignedTo,customCampaignID,customWhoPushedTheLead,customParcelCounty,customParcelState'
 
             response = requests.get(
                 f'https://api.followupboss.com/v1/people/{person_id}?fields={fields_param}',
@@ -428,13 +435,27 @@ class WebhookProcessor:
                         conn.rollback()
                         return False
 
-                    # Insert new stage change record with lead source
+                    # Extract assigned agent info
+                    # assignedUserId is the ID, assignedTo is an object with name/email
+                    assigned_user_id = person_data.get('assignedUserId')
+                    assigned_to = person_data.get('assignedTo')
+                    assigned_user_name = None
+                    if assigned_to and isinstance(assigned_to, dict):
+                        assigned_user_name = assigned_to.get('name')
+                    elif assigned_to and isinstance(assigned_to, str):
+                        assigned_user_name = assigned_to
+
+                    if assigned_user_id or assigned_user_name:
+                        print(f"👤 Assigned agent captured: {assigned_user_name} (ID: {assigned_user_id})")
+
+                    # Insert new stage change record with lead source and assigned agent
                     cur.execute("""
                         INSERT INTO stage_changes (
                             person_id, first_name, last_name, stage_from, stage_to,
                             changed_at, received_at, source, lead_source_tag,
-                            deal_id, campaign_id, who_pushed_lead, parcel_county, parcel_state
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            deal_id, campaign_id, who_pushed_lead, parcel_county, parcel_state,
+                            assigned_user_id, assigned_user_name
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         person_id,
                         first_name,
@@ -449,7 +470,9 @@ class WebhookProcessor:
                         person_data.get('customCampaignID'),
                         person_data.get('customWhoPushedTheLead'),
                         person_data.get('customParcelCounty'),
-                        person_data.get('customParcelState')
+                        person_data.get('customParcelState'),
+                        str(assigned_user_id) if assigned_user_id else None,
+                        assigned_user_name
                     ))
 
                     conn.commit()
