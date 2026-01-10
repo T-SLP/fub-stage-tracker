@@ -336,7 +336,7 @@ class WebhookProcessor:
             # Without this, custom fields return as None even if populated in FUB
             # We need to request both standard fields AND custom fields explicitly
             # assignedUserId and assignedTo capture the agent assigned at time of stage change
-            fields_param = 'id,firstName,lastName,stage,tags,assignedUserId,assignedTo,customCampaignID,customWhoPushedTheLead,customParcelCounty,customParcelState'
+            fields_param = 'id,firstName,lastName,stage,tags,assignedUserId,assignedTo,customCampaignID,customWhoPushedTheLead,customParcelCounty,customParcelState,customParcelZip'
 
             response = requests.get(
                 f'https://api.followupboss.com/v1/people/{person_id}?fields={fields_param}',
@@ -453,9 +453,9 @@ class WebhookProcessor:
                         INSERT INTO stage_changes (
                             person_id, first_name, last_name, stage_from, stage_to,
                             changed_at, received_at, source, lead_source_tag,
-                            deal_id, campaign_id, who_pushed_lead, parcel_county, parcel_state,
+                            deal_id, campaign_id, who_pushed_lead, parcel_county, parcel_state, parcel_zip,
                             assigned_user_id, assigned_user_name
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         person_id,
                         first_name,
@@ -471,6 +471,7 @@ class WebhookProcessor:
                         person_data.get('customWhoPushedTheLead'),
                         person_data.get('customParcelCounty'),
                         person_data.get('customParcelState'),
+                        person_data.get('customParcelZip'),
                         str(assigned_user_id) if assigned_user_id else None,
                         assigned_user_name
                     ))

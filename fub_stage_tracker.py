@@ -35,7 +35,8 @@ def extract_custom_fields(person):
         'campaign_id': person.get('customCampaignID'),  # FIXED: Use correct field name
         'who_pushed_lead': person.get('customWhoPushedTheLead'),
         'parcel_county': person.get('customParcelCounty'),
-        'parcel_state': person.get('customParcelState')
+        'parcel_state': person.get('customParcelState'),
+        'parcel_zip': person.get('customParcelZip')
     }
 
 
@@ -344,6 +345,7 @@ class PerformanceOptimizedFUB:
                     'who_pushed_lead': custom_fields['who_pushed_lead'],
                     'parcel_county': custom_fields['parcel_county'],
                     'parcel_state': custom_fields['parcel_state'],
+                    'parcel_zip': custom_fields['parcel_zip'],
                     'lead_source_tag': lead_source_tag
                 }
 
@@ -391,9 +393,9 @@ class PerformanceOptimizedFUB:
             query = """
                 INSERT INTO stage_changes (
                     person_id, deal_id, first_name, last_name,
-                    stage_from, stage_to, changed_at, received_at, 
+                    stage_from, stage_to, changed_at, received_at,
                     source, event_id, raw_payload,
-                    campaign_id, who_pushed_lead, parcel_county, parcel_state, lead_source_tag
+                    campaign_id, who_pushed_lead, parcel_county, parcel_state, parcel_zip, lead_source_tag
                 ) VALUES %s
             """
 
@@ -414,6 +416,7 @@ class PerformanceOptimizedFUB:
                     change.get('who_pushed_lead'),
                     change.get('parcel_county'),
                     change.get('parcel_state'),
+                    change.get('parcel_zip'),
                     change.get('lead_source_tag')
                 )
                 for change in new_changes
@@ -681,6 +684,7 @@ class PerformanceOptimizedFUB:
                     'who_pushed_lead': custom_fields['who_pushed_lead'],
                     'parcel_county': custom_fields['parcel_county'],
                     'parcel_state': custom_fields['parcel_state'],
+                    'parcel_zip': custom_fields['parcel_zip'],
                     'lead_source_tag': lead_source_tag
                 })
             elif last_stage != current_stage:
@@ -699,6 +703,7 @@ class PerformanceOptimizedFUB:
                     'who_pushed_lead': custom_fields['who_pushed_lead'],
                     'parcel_county': custom_fields['parcel_county'],
                     'parcel_state': custom_fields['parcel_state'],
+                    'parcel_zip': custom_fields['parcel_zip'],
                     'lead_source_tag': lead_source_tag
                 })
 
@@ -721,7 +726,7 @@ class PerformanceOptimizedFUB:
                     INSERT INTO stage_changes (
                         person_id, deal_id, first_name, last_name,
                         stage_from, stage_to, changed_at, received_at, raw_payload,
-                        campaign_id, who_pushed_lead, parcel_county, parcel_state, lead_source_tag,
+                        campaign_id, who_pushed_lead, parcel_county, parcel_state, parcel_zip, lead_source_tag,
                         source, event_id
                     ) VALUES %s
                     """
@@ -743,6 +748,7 @@ class PerformanceOptimizedFUB:
                             change.get('who_pushed_lead'),
                             change.get('parcel_county'),
                             change.get('parcel_state'),
+                            change.get('parcel_zip'),
                             change.get('lead_source_tag'),
                             # New fields
                             change.get('source', 'polling'),
@@ -1071,6 +1077,7 @@ class PerformanceOptimizedFUB:
                     'who_pushed_lead': custom_fields['who_pushed_lead'],
                     'parcel_county': custom_fields['parcel_county'],
                     'parcel_state': custom_fields['parcel_state'],
+                    'parcel_zip': custom_fields['parcel_zip'],
                     'lead_source_tag': lead_source_tag
                 }
                 logged += 1
@@ -1091,6 +1098,7 @@ class PerformanceOptimizedFUB:
                     'who_pushed_lead': custom_fields['who_pushed_lead'],
                     'parcel_county': custom_fields['parcel_county'],
                     'parcel_state': custom_fields['parcel_state'],
+                    'parcel_zip': custom_fields['parcel_zip'],
                     'lead_source_tag': lead_source_tag
                 }
                 logged += 1
