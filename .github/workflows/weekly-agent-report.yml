@@ -3,11 +3,11 @@ name: Weekly Agent Report
 on:
   # Run twice per week
   schedule:
-    # Monday at 5 PM Eastern (10 PM UTC to ensure it's after 5 PM ET year-round)
-    # Full report for the previous week (Mon-Sun)
-    - cron: '0 22 * * 1'
+    # Sunday at 10 PM Eastern (3 AM UTC Monday to ensure it's after 10 PM ET year-round)
+    # Full report for the previous week (Mon-Sun) - creates Google Sheet tab
+    - cron: '0 3 * * 1'
     # Wednesday at 2 PM Eastern (7 PM UTC to ensure it's after 2 PM ET year-round)
-    # Mid-week report for current week so far (Mon-Wed)
+    # Mid-week report for current week so far - email only, no tab
     - cron: '0 19 * * 3'
 
   # Allow manual trigger from GitHub Actions UI
@@ -22,6 +22,7 @@ on:
           - auto
           - previous-week
           - current-week
+          - midweek-email
       days:
         description: 'Number of days (only used if report_type is not set)'
         required: false
@@ -54,13 +55,22 @@ jobs:
           REPORT_TYPE="${{ github.event.inputs.report_type || 'auto' }}"
           DAYS="${{ github.event.inputs.days }}"
 
+          # Determine if this is a mid-week run (Wednesday = no sheet, email only)
+          DAY_OF_WEEK=$(date +%u)  # 1=Monday, 3=Wednesday, 7=Sunday
+
           if [ -n "$DAYS" ]; then
             python reports/weekly_agent_report.py --days "$DAYS"
           elif [ "$REPORT_TYPE" = "previous-week" ]; then
             python reports/weekly_agent_report.py --previous-week
           elif [ "$REPORT_TYPE" = "current-week" ]; then
             python reports/weekly_agent_report.py
+          elif [ "$REPORT_TYPE" = "midweek-email" ]; then
+            # Mid-week email only (no Google Sheet tab)
+            python reports/weekly_agent_report.py --no-sheet
+          elif [ "$DAY_OF_WEEK" = "3" ]; then
+            # Wednesday scheduled run - mid-week email only
+            python reports/weekly_agent_report.py --no-sheet
           else
-            # Auto mode: script detects based on current day
-            python reports/weekly_agent_report.py
+            # Sunday/Monday scheduled run or manual - full report with sheet
+            python reports/weekly_agent_report.py --previous-week
           fi

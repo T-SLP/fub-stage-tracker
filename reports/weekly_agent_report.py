@@ -397,6 +397,11 @@ def main():
         help='Report on the previous full week (Mon-Sun) instead of current week'
     )
     parser.add_argument(
+        '--no-sheet',
+        action='store_true',
+        help='Skip writing to Google Sheets (for mid-week email-only reports)'
+    )
+    parser.add_argument(
         '--dry-run',
         action='store_true',
         help='Print report to console without writing to Google Sheets'
@@ -434,10 +439,10 @@ def main():
     call_metrics = query_call_metrics(start_date, end_date, fub_users)
     print(f"Retrieved call data for {len(call_metrics)} users")
 
-    if args.dry_run:
-        # Print to console instead of writing to sheets
+    def print_report_to_console(title_suffix=""):
+        """Helper to print report data to console."""
         print("\n" + "=" * 100)
-        print("AGENT PERFORMANCE REPORT (DRY RUN)")
+        print(f"AGENT PERFORMANCE REPORT{title_suffix}")
         print(f"Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
         print("=" * 100)
 
@@ -460,9 +465,18 @@ def main():
 
             print(f"{agent:<20} {offers:<7} {contracts:<10} {under_contract:<8} {closed:<7} {calls:<7} {connected:<8} {conversations:<7} {talk_time:<8}")
 
+    if args.dry_run:
+        # Dry run - print to console only
+        print_report_to_console(" (DRY RUN)")
         print("\n(Dry run - no data written to Google Sheets)")
+    elif args.no_sheet:
+        # Mid-week email-only run - no Google Sheet tab
+        print_report_to_console(" (MID-WEEK)")
+        print("\n(Mid-week report - no Google Sheet tab created)")
+        # TODO: Send email when email functionality is implemented
+        print("(Email functionality not yet implemented)")
     else:
-        # Write to Google Sheets
+        # Full report - write to Google Sheets
         print("Writing report to Google Sheets...")
         sheet_url = write_to_google_sheets(stage_metrics, call_metrics, start_date, end_date)
         print(f"\nReport created successfully!")
