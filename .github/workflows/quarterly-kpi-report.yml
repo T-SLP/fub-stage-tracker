@@ -1,0 +1,44 @@
+name: Quarterly KPI Report
+
+on:
+  # Manual trigger only - select quarter and year when running
+  workflow_dispatch:
+    inputs:
+      quarter:
+        description: 'Quarter (1-4)'
+        required: true
+        type: choice
+        options:
+          - '1'
+          - '2'
+          - '3'
+          - '4'
+      year:
+        description: 'Year (e.g., 2025)'
+        required: true
+        type: string
+        default: '2025'
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r reports/requirements.txt
+
+      - name: Generate KPI report
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
+        run: |
+          python reports/quarterly_kpi_report.py --quarter ${{ github.event.inputs.quarter }} --year ${{ github.event.inputs.year }}
