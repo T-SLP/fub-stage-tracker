@@ -51,8 +51,8 @@ from google.oauth2.service_account import Credentials
 # Configuration from environment
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
 GOOGLE_SHEETS_CREDENTIALS = os.getenv("GOOGLE_SHEETS_CREDENTIALS")
-# Default folder for KPI reports
-DEFAULT_GOOGLE_DRIVE_FOLDER_ID = "12bej6uncSemHQFYSZJsQAu7tuL2GHvlf"
+# KPI Reports spreadsheet ID
+KPI_REPORTS_SPREADSHEET_ID = "1R0BE0ceLaPN7eA5EjyxBamePzOO9BhQgogwBNxZFxNY"
 
 # Qualified stages (leads moving FROM these are considered throwaway if they go to disqualified)
 QUALIFIED_STAGES = [
@@ -402,19 +402,16 @@ def write_to_google_sheets(
     metrics: Dict[str, Any],
     start_date: datetime,
     end_date: datetime,
-    period_name: str = None,
-    folder_id: str = None
+    period_name: str = None
 ) -> str:
     """
-    Create a new Google Sheet with the KPI report.
-    Also creates separate tabs for contract lead details.
-    Returns the URL to the new spreadsheet.
+    Add KPI report tabs to the existing spreadsheet.
+    Creates separate tabs for summary and contract lead details.
+    Returns the URL to the spreadsheet.
     """
     if not GOOGLE_SHEETS_CREDENTIALS:
         print("ERROR: GOOGLE_SHEETS_CREDENTIALS not set")
         sys.exit(1)
-
-    folder_id = folder_id or DEFAULT_GOOGLE_DRIVE_FOLDER_ID
 
     creds_dict = json.loads(GOOGLE_SHEETS_CREDENTIALS)
 
@@ -426,19 +423,23 @@ def write_to_google_sheets(
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     client = gspread.authorize(credentials)
 
-    # Create spreadsheet name
+    # Open the existing spreadsheet
+    spreadsheet = client.open_by_key(KPI_REPORTS_SPREADSHEET_ID)
+    print(f"Opened spreadsheet: {spreadsheet.title}")
+
+    # Create tab name based on period
     if period_name:
-        spreadsheet_name = f"{period_name} Report"
+        tab_name = f"{period_name} Summary"
     else:
-        spreadsheet_name = f"KPI Report {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+        tab_name = f"KPIs {start_date.strftime('%m/%d/%Y')} - {end_date.strftime('%m/%d/%Y')}"
 
-    # Create a new spreadsheet
-    spreadsheet = client.create(spreadsheet_name, folder_id=folder_id)
-    print(f"Created new spreadsheet: {spreadsheet_name}")
+    # Check if tab already exists, if so add a timestamp
+    existing_tabs = [ws.title for ws in spreadsheet.worksheets()]
+    if tab_name in existing_tabs:
+        tab_name = f"{tab_name} ({datetime.now(timezone.utc).strftime('%H%M')})"
 
-    # Get the default first sheet and rename it
-    worksheet = spreadsheet.sheet1
-    worksheet.update_title("KPI Summary")
+    # Create new worksheet for the summary
+    worksheet = spreadsheet.add_worksheet(title=tab_name, rows=30, cols=5)
 
     # Prepare the report data
     rows = [
@@ -489,8 +490,8 @@ def write_to_google_sheets(
     # Create period label for detail tabs
     period_label = f"Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
 
-    # Create base name for detail tabs (e.g., "Q4 2025" from "Q4 2025 Report")
-    base_name = spreadsheet_name.replace(" Report", "").replace("KPI Report ", "")
+    # Create base name for detail tabs (e.g., "Q4 2025" from "Q4 2025 Summary")
+    base_name = tab_name.replace(" Summary", "").replace("KPIs ", "")
 
     # Create tab for Contracts Closed
     create_lead_detail_tab(
@@ -662,7 +663,7 @@ Examples:
     # Determine date range
     if args.quarter:
         start_date, end_date = get_quarter_dates(args.quarter, args.year)
-        period_name = args.tab_name or f"Q{args.quarter} {args.year} KPIs"
+        period_name = args.tab_name or f"Q{args.quarter} {args.year}"
         print(f"Generating Q{args.quarter} {args.year} KPI report...")
     else:
         start_date = parse_date(args.start)
