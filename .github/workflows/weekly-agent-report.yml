@@ -1,18 +1,30 @@
 name: Weekly Agent Report
 
 on:
-  # Run every Friday at 5 PM Eastern (10 PM UTC in winter, 9 PM UTC in summer)
-  # Using 10 PM UTC to ensure it's after 5 PM Eastern year-round
+  # Run twice per week
   schedule:
-    - cron: '0 22 * * 5'
+    # Monday at 5 PM Eastern (10 PM UTC to ensure it's after 5 PM ET year-round)
+    # Full report for the previous week (Mon-Sun)
+    - cron: '0 22 * * 1'
+    # Wednesday at 2 PM Eastern (7 PM UTC to ensure it's after 2 PM ET year-round)
+    # Mid-week report for current week so far (Mon-Wed)
+    - cron: '0 19 * * 3'
 
   # Allow manual trigger from GitHub Actions UI
   workflow_dispatch:
     inputs:
-      days:
-        description: 'Number of days to include in report'
+      report_type:
+        description: 'Report type'
         required: false
-        default: '7'
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - previous-week
+          - current-week
+      days:
+        description: 'Number of days (only used if report_type is not set)'
+        required: false
         type: string
 
 jobs:
@@ -39,4 +51,16 @@ jobs:
           GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
         run: |
-          python reports/weekly_agent_report.py --days ${{ github.event.inputs.days || '7' }}
+          REPORT_TYPE="${{ github.event.inputs.report_type || 'auto' }}"
+          DAYS="${{ github.event.inputs.days }}"
+
+          if [ -n "$DAYS" ]; then
+            python reports/weekly_agent_report.py --days "$DAYS"
+          elif [ "$REPORT_TYPE" = "previous-week" ]; then
+            python reports/weekly_agent_report.py --previous-week
+          elif [ "$REPORT_TYPE" = "current-week" ]; then
+            python reports/weekly_agent_report.py
+          else
+            # Auto mode: script detects based on current day
+            python reports/weekly_agent_report.py
+          fi

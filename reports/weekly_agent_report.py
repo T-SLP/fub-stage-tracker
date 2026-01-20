@@ -49,10 +49,49 @@ TRACKED_STAGES = [
 ]
 
 
-def get_date_range(days_back: int = 7) -> tuple[datetime, datetime]:
-    """Calculate the date range for the report."""
-    end_date = datetime.now(timezone.utc)
-    start_date = end_date - timedelta(days=days_back)
+def get_date_range(days_back: int = None, previous_week: bool = False) -> tuple[datetime, datetime]:
+    """
+    Calculate the date range for the report.
+
+    Modes:
+    - previous_week=True: Returns the full previous week (Mon 00:00 to Sun 23:59)
+    - days_back specified: Simple "last N days" calculation
+    - Default (auto): On Monday, returns previous week. Otherwise, returns current week so far.
+
+    All modes use Monday-Sunday week boundaries to match FUB's standard report format.
+    """
+    now = datetime.now(timezone.utc)
+
+    if days_back is not None:
+        # Legacy behavior: simple days-back calculation
+        end_date = now
+        start_date = end_date - timedelta(days=days_back)
+        return start_date, end_date
+
+    # weekday() returns 0 for Monday, 6 for Sunday
+    days_since_monday = now.weekday()
+
+    # Determine if we should report on previous week
+    # On Monday (weekday=0), auto mode reports the previous full week
+    use_previous_week = previous_week or (days_since_monday == 0)
+
+    if use_previous_week:
+        # Previous week: Monday through Sunday of last week
+        # First, find the start of the current week
+        start_of_current_week = now - timedelta(days=days_since_monday)
+        start_of_current_week = start_of_current_week.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # Previous week starts 7 days before current week
+        start_date = start_of_current_week - timedelta(days=7)
+
+        # Previous week ends at the end of Sunday (start of current week)
+        end_date = start_of_current_week
+    else:
+        # Current week: Monday through now
+        start_of_week = now - timedelta(days=days_since_monday)
+        start_date = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = now
+
     return start_date, end_date
 
 
@@ -202,10 +241,11 @@ def query_call_metrics(start_date: datetime, end_date: datetime, user_ids: Dict[
         }
 
     # Group calls by userId and calculate metrics
-    # FUB definitions:
+    # FUB definitions (from https://help.followupboss.com/hc/en-us/articles/360014186693-Call-Reporting):
     # - Calls Made = Outgoing calls only (isIncoming=False)
-    # - Connected = Calls with duration >= 60 seconds
-    # - Conversations = Outgoing calls with duration >= 60 seconds
+    # - Connected = Calls with duration >= 60 seconds (1 minute)
+    # - Conversations = Outgoing calls with duration >= 120 seconds (2 minutes)
+    # - Talk Time = Total duration of all calls
     for call in all_calls:
         call_user_id = call.get('userId')
         call_user_name = call.get('userName')
@@ -224,12 +264,12 @@ def query_call_metrics(start_date: datetime, end_date: datetime, user_ids: Dict[
             if is_outgoing:
                 call_metrics[agent_name]['calls'] += 1
 
-            # Connected = duration >= 60 seconds (any call)
+            # Connected = duration >= 60 seconds (1 minute)
             if duration >= 60:
                 call_metrics[agent_name]['connected'] += 1
 
-            # Conversations = outgoing calls with duration >= 60 seconds
-            if is_outgoing and duration >= 60:
+            # Conversations = outgoing calls with duration >= 120 seconds (2 minutes)
+            if is_outgoing and duration >= 120:
                 call_metrics[agent_name]['conversations'] += 1
 
             # Talk time includes all calls with duration
@@ -283,8 +323,8 @@ def write_to_google_sheets(
     if tab_name in existing_tabs:
         tab_name = f"{tab_name} ({datetime.now(timezone.utc).strftime('%H%M')})"
 
-    # Create new worksheet
-    worksheet = spreadsheet.add_worksheet(title=tab_name, rows=100, cols=15)
+    # Create new worksheet at the leftmost position (most recent first)
+    worksheet = spreadsheet.add_worksheet(title=tab_name, rows=100, cols=15, index=0)
 
     # Prepare header row
     headers = [
@@ -348,8 +388,13 @@ def main():
     parser.add_argument(
         '--days',
         type=int,
-        default=7,
-        help='Number of days to include in report (default: 7)'
+        default=None,
+        help='Number of days to include in report (overrides week boundaries)'
+    )
+    parser.add_argument(
+        '--previous-week',
+        action='store_true',
+        help='Report on the previous full week (Mon-Sun) instead of current week'
     )
     parser.add_argument(
         '--dry-run',
@@ -358,10 +403,21 @@ def main():
     )
     args = parser.parse_args()
 
-    print(f"Generating agent report for the last {args.days} days...")
+    # Determine report type for logging
+    now = datetime.now(timezone.utc)
+    is_monday = now.weekday() == 0
+
+    if args.days is not None:
+        print(f"Generating agent report for the last {args.days} days...")
+    elif args.previous_week:
+        print("Generating agent report for previous week (Mon-Sun)...")
+    elif is_monday:
+        print("Monday detected - generating report for previous week (Mon-Sun)...")
+    else:
+        print("Generating agent report for current week (Mon-Sun) so far...")
 
     # Calculate date range
-    start_date, end_date = get_date_range(args.days)
+    start_date, end_date = get_date_range(args.days, args.previous_week)
     print(f"Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
 
     # Get stage metrics from database
