@@ -179,17 +179,40 @@ def query_kpi_metrics(start_date: datetime, end_date: datetime) -> Dict[str, Any
             """, (start_date, end_date))
             metrics['unknown_leads'] = cur.fetchone()['count']
 
-            # 7. Deals Closed
+            # 7. Deals Closed (Under Contract → Closed transitions during the period)
+            # This counts any deal that closed during the period, regardless of when
+            # it went under contract
             cur.execute("""
                 SELECT COUNT(*) as count
                 FROM stage_changes
                 WHERE changed_at >= %s
                   AND changed_at < %s
+                  AND stage_from = 'ACQ - Under Contract'
                   AND stage_to = 'Closed'
             """, (start_date, end_date))
             metrics['deals_closed'] = cur.fetchone()['count']
 
-            # 8. Conversion Rate (Closed / Qualified * 100)
+            # Also get the list of closed deals for the detail tab
+            cur.execute("""
+                SELECT person_id, first_name, last_name, changed_at as closed_date
+                FROM stage_changes
+                WHERE changed_at >= %s
+                  AND changed_at < %s
+                  AND stage_from = 'ACQ - Under Contract'
+                  AND stage_to = 'Closed'
+                ORDER BY changed_at DESC
+            """, (start_date, end_date))
+            deals_closed_list = []
+            for row in cur.fetchall():
+                deals_closed_list.append({
+                    'person_id': row['person_id'],
+                    'first_name': row['first_name'] or '',
+                    'last_name': row['last_name'] or '',
+                    'closed_date': row['closed_date']
+                })
+            metrics['deals_closed_list'] = deals_closed_list
+
+            # 8. Conversion Rate (Deals Closed / Qualified * 100)
             if metrics['total_qualified'] > 0:
                 metrics['conversion_rate'] = round(
                     (metrics['deals_closed'] / metrics['total_qualified']) * 100, 2
@@ -316,6 +339,53 @@ def query_kpi_metrics(start_date: datetime, end_date: datetime) -> Dict[str, Any
             metrics['pipeline_deals'] = len(pipeline_deals_list)
             metrics['pipeline_deals_list'] = pipeline_deals_list
 
+            # 11. Historical Close Rate (All-time)
+            # Of ALL contracts that have ever been resolved (closed or fell through),
+            # what percentage closed? This gives a more reliable close rate based on
+            # full history rather than a single quarter's small sample size.
+            cur.execute("""
+                WITH all_contracts AS (
+                    -- Get all leads that have ever entered Under Contract
+                    SELECT DISTINCT person_id
+                    FROM stage_changes
+                    WHERE stage_to = 'ACQ - Under Contract'
+                ),
+                latest_stages AS (
+                    -- For each, find their most recent stage
+                    SELECT DISTINCT ON (sc.person_id)
+                        sc.person_id,
+                        sc.stage_to as current_stage
+                    FROM stage_changes sc
+                    INNER JOIN all_contracts ac ON sc.person_id = ac.person_id
+                    ORDER BY sc.person_id, sc.changed_at DESC
+                ),
+                resolved AS (
+                    -- Only count resolved contracts (not still pending)
+                    SELECT
+                        current_stage,
+                        CASE WHEN current_stage = 'Closed' THEN 1 ELSE 0 END as is_closed
+                    FROM latest_stages
+                    WHERE current_stage != 'ACQ - Under Contract'
+                )
+                SELECT
+                    COUNT(*) as total_resolved,
+                    SUM(is_closed) as total_closed
+                FROM resolved
+            """)
+            historical_results = cur.fetchone()
+            total_resolved = historical_results['total_resolved'] or 0
+            total_closed = historical_results['total_closed'] or 0
+
+            metrics['historical_total_resolved'] = total_resolved
+            metrics['historical_total_closed'] = total_closed
+
+            if total_resolved > 0:
+                metrics['historical_close_rate'] = round(
+                    (total_closed / total_resolved) * 100, 2
+                )
+            else:
+                metrics['historical_close_rate'] = 0.0
+
     finally:
         conn.close()
 
@@ -374,11 +444,15 @@ def create_lead_detail_tab(
         )
 
         if 'contract_date' in lead:
-            # For contract-related tabs
+            # For contract-related tabs (contracts initiated during period)
             contract_date = lead['contract_date'].strftime('%Y-%m-%d') if lead['contract_date'] else ''
             current_stage = lead.get('current_stage', '')
             last_date = lead['last_stage_date'].strftime('%Y-%m-%d') if lead.get('last_stage_date') else ''
             rows.append([hyperlink, contract_date, current_stage, last_date])
+        elif 'closed_date' in lead:
+            # For deals closed tab (any contract that closed during period)
+            closed_date = lead['closed_date'].strftime('%Y-%m-%d') if lead['closed_date'] else ''
+            rows.append([hyperlink, closed_date])
         else:
             # For pipeline deals tab
             stage_date = lead['stage_date'].strftime('%Y-%m-%d') if lead['stage_date'] else ''
@@ -439,7 +513,7 @@ def write_to_google_sheets(
         tab_name = f"{tab_name} ({datetime.now(timezone.utc).strftime('%H%M')})"
 
     # Create new worksheet for the summary
-    worksheet = spreadsheet.add_worksheet(title=tab_name, rows=30, cols=5)
+    worksheet = spreadsheet.add_worksheet(title=tab_name, rows=40, cols=5)
 
     # Prepare the report data
     rows = [
@@ -447,21 +521,26 @@ def write_to_google_sheets(
         [f"Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"],
         [],
         ["Metric", "Value", "Notes"],
-        ["Total Qualified Leads", metrics['total_qualified'], "Leads reaching ACQ - Qualified stage"],
-        ["Throw-away Leads", metrics['throwaway_leads'], "Qualified leads moved to disqualified stages"],
+        ["Total Qualified Leads", metrics['total_qualified'], "Leads reaching ACQ - Qualified during this period"],
+        ["Throw-away Leads", metrics['throwaway_leads'], "Qualified leads moved to disqualified stages during this period"],
         ["Net Total Leads", metrics['net_total_leads'], "Qualified - Throwaway"],
-        ["Total Offers", metrics['total_offers'], "Leads reaching ACQ - Offers Made stage"],
+        ["Total Offers", metrics['total_offers'], "Leads reaching ACQ - Offers Made during this period"],
         ["ReadyMode Leads", metrics['readymode_leads'], "Qualified leads from cold calling"],
         ["SMS Leads", metrics['sms_leads'], "Qualified leads from Roor + Smarter Contact"],
         ["Unknown/Other Leads", metrics['unknown_leads'], "Qualified leads with no source tag"],
-        ["Conversion Rate", f"{metrics['conversion_rate']}%", "Deals Closed / Qualified Leads"],
-        ["Deals Closed", metrics['deals_closed'], "Leads reaching Closed stage during period"],
+        ["Deals Closed", metrics['deals_closed'], "Under Contract → Closed during this period (any contract)"],
+        ["Conversion Rate", f"{metrics['conversion_rate']}%", "Deals Closed ÷ Qualified Leads"],
         [],
-        ["--- Contract Metrics ---", "", ""],
-        ["Contract-to-Close Rate", f"{metrics['contract_to_close_rate']}%", "Closed / (Closed + Fell Through) for contracts in period"],
-        ["Contracts Closed", metrics['contracts_closed'], "Under Contract → Closed"],
-        ["Contracts Fell Through", metrics['contracts_fell_through'], "Under Contract → Any other stage"],
-        ["Contracts Still Pending", metrics['contracts_still_pending'], "Still in Under Contract (excluded from rate)"],
+        ["--- Contract Metrics (Contracts Initiated This Period) ---", "", ""],
+        ["Contract-to-Close Rate", f"{metrics['contract_to_close_rate']}%", "% of contracts from this period that closed (excludes pending)"],
+        ["Contracts Closed", metrics['contracts_closed'], "Contracts initiated this period → now Closed"],
+        ["Contracts Fell Through", metrics['contracts_fell_through'], "Contracts initiated this period → moved to other stage"],
+        ["Contracts Still Pending", metrics['contracts_still_pending'], "Contracts initiated this period → still Under Contract"],
+        [],
+        ["--- Historical Close Rate (All-Time) ---", "", ""],
+        ["Historical Close Rate", f"{metrics['historical_close_rate']}%", f"Based on {metrics['historical_total_resolved']} resolved contracts all-time"],
+        ["Total Closed (All-Time)", metrics['historical_total_closed'], "All contracts that ever closed"],
+        ["Total Resolved (All-Time)", metrics['historical_total_resolved'], "All contracts that closed or fell through"],
         [],
         ["--- Forward-Looking ---", "", ""],
         ["Pipeline Deals", metrics['pipeline_deals'], "All deals currently in Under Contract stage"],
@@ -480,12 +559,13 @@ def write_to_google_sheets(
     # Format header rows
     worksheet.format('A1', {'textFormat': {'bold': True, 'fontSize': 14}})
     worksheet.format('A4:C4', {'textFormat': {'bold': True}, 'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}})
-    worksheet.format('A15', {'textFormat': {'bold': True, 'italic': True}})
-    worksheet.format('A21', {'textFormat': {'bold': True, 'italic': True}})
-    worksheet.format('A24', {'textFormat': {'bold': True, 'italic': True}})
+    worksheet.format('A15', {'textFormat': {'bold': True, 'italic': True}})  # Contract Metrics section
+    worksheet.format('A21', {'textFormat': {'bold': True, 'italic': True}})  # Historical Close Rate section
+    worksheet.format('A26', {'textFormat': {'bold': True, 'italic': True}})  # Forward-Looking section
+    worksheet.format('A29', {'textFormat': {'bold': True, 'italic': True}})  # Manual Entry section
 
     # Adjust column widths
-    worksheet.set_basic_filter('A4:C28')
+    worksheet.set_basic_filter('A4:C35')
 
     # Create period label for detail tabs
     period_label = f"Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
@@ -493,13 +573,22 @@ def write_to_google_sheets(
     # Create base name for detail tabs (e.g., "Q4 2025" from "Q4 2025 Summary")
     base_name = tab_name.replace(" Summary", "").replace("KPIs ", "")
 
-    # Create tab for Contracts Closed
+    # Create tab for Deals Closed (any contract that closed during period)
     create_lead_detail_tab(
         spreadsheet,
-        f"{base_name} - Contracts Closed",
+        f"{base_name} - Deals Closed",
+        metrics.get('deals_closed_list', []),
+        ["Lead Name", "Closed Date"],
+        period_label
+    )
+
+    # Create tab for Contracts Closed (contracts initiated during period that closed)
+    create_lead_detail_tab(
+        spreadsheet,
+        f"{base_name} - Period Contracts Closed",
         metrics.get('contracts_closed_list', []),
         ["Lead Name", "Contract Date", "Current Stage", "Closed Date"],
-        period_label
+        f"{period_label} (contracts initiated this period)"
     )
 
     # Create tab for Contracts Fell Through
@@ -539,15 +628,21 @@ def print_report(metrics: Dict[str, Any], start_date: datetime, end_date: dateti
     print(f"{'ReadyMode Leads (Cold Call)':<30} {metrics['readymode_leads']:>10}")
     print(f"{'SMS Leads (Text)':<30} {metrics['sms_leads']:>10}")
     print(f"{'Unknown/Other Leads':<30} {metrics['unknown_leads']:>10}")
-    print(f"{'Conversion Rate':<30} {metrics['conversion_rate']:>9}%")
     print(f"{'Deals Closed':<30} {metrics['deals_closed']:>10}")
+    print(f"{'Conversion Rate':<30} {metrics['conversion_rate']:>9}%")
     print("-" * 42)
 
-    print("\n--- Contract Metrics ---")
+    print("\n--- Contract Metrics (Contracts Initiated This Period) ---")
     print(f"{'Contract-to-Close Rate':<30} {metrics['contract_to_close_rate']:>9}%")
     print(f"{'Contracts Closed':<30} {metrics['contracts_closed']:>10}")
     print(f"{'Contracts Fell Through':<30} {metrics['contracts_fell_through']:>10}")
     print(f"{'Contracts Still Pending':<30} {metrics['contracts_still_pending']:>10}")
+    print("-" * 42)
+
+    print("\n--- Historical Close Rate (All-Time) ---")
+    print(f"{'Historical Close Rate':<30} {metrics['historical_close_rate']:>9}%")
+    print(f"{'Total Closed (All-Time)':<30} {metrics['historical_total_closed']:>10}")
+    print(f"{'Total Resolved (All-Time)':<30} {metrics['historical_total_resolved']:>10}")
     print("-" * 42)
 
     print("\n--- Forward-Looking ---")
@@ -555,7 +650,7 @@ def print_report(metrics: Dict[str, Any], start_date: datetime, end_date: dateti
     print("-" * 42)
 
     # Print lead details for contract metrics
-    def print_lead_list(title: str, leads: list, show_current_stage: bool = True):
+    def print_lead_list(title: str, leads: list, date_field: str = 'contract_date', show_current_stage: bool = True):
         print(f"\n{title}")
         print("-" * 70)
         if not leads:
@@ -564,17 +659,24 @@ def print_report(metrics: Dict[str, Any], start_date: datetime, end_date: dateti
         for lead in leads:
             name = f"{lead['first_name']} {lead['last_name']}".strip() or "Unknown"
             fub_url = f"https://app.followupboss.com/2/people/view/{lead['person_id']}"
-            contract_date = lead.get('contract_date', lead.get('stage_date'))
-            date_str = contract_date.strftime('%Y-%m-%d') if contract_date else 'N/A'
+            date_val = lead.get(date_field) or lead.get('contract_date') or lead.get('stage_date') or lead.get('closed_date')
+            date_str = date_val.strftime('%Y-%m-%d') if date_val else 'N/A'
             if show_current_stage:
                 current = lead.get('current_stage', 'N/A')
-                print(f"  {name:<25} | Contract: {date_str} | Stage: {current}")
+                print(f"  {name:<25} | Date: {date_str} | Stage: {current}")
             else:
-                print(f"  {name:<25} | Under Contract: {date_str}")
+                print(f"  {name:<25} | Date: {date_str}")
             print(f"    FUB: {fub_url}")
 
     print_lead_list(
-        "CONTRACTS CLOSED:",
+        "DEALS CLOSED (during period):",
+        metrics.get('deals_closed_list', []),
+        date_field='closed_date',
+        show_current_stage=False
+    )
+
+    print_lead_list(
+        "PERIOD CONTRACTS CLOSED (contracts initiated this period):",
         metrics.get('contracts_closed_list', [])
     )
     print_lead_list(
