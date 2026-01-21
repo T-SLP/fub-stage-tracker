@@ -145,7 +145,7 @@ def query_kpi_metrics(start_date: datetime, end_date: datetime) -> Dict[str, Any
             """, (start_date, end_date))
             metrics['total_offers'] = cur.fetchone()['count']
 
-            # 5. ReadyMode Leads (cold calling) - qualified leads with ReadyMode source
+            # 5. Cold Calling Leads (ReadyMode) - clearly tagged
             cur.execute("""
                 SELECT COUNT(*) as count
                 FROM stage_changes
@@ -154,30 +154,18 @@ def query_kpi_metrics(start_date: datetime, end_date: datetime) -> Dict[str, Any
                   AND stage_to = 'ACQ - Qualified'
                   AND lead_source_tag = 'ReadyMode'
             """, (start_date, end_date))
-            metrics['readymode_leads'] = cur.fetchone()['count']
+            metrics['cold_calling_leads'] = cur.fetchone()['count']
 
-            # 6. SMS Leads (Roor + Smarter Contact) - qualified leads with SMS sources
+            # 6. SMS Leads - everything that's not ReadyMode (includes NULL, Roor, Smarter Contact)
             cur.execute("""
                 SELECT COUNT(*) as count
                 FROM stage_changes
                 WHERE changed_at >= %s
                   AND changed_at < %s
                   AND stage_to = 'ACQ - Qualified'
-                  AND lead_source_tag IN ('Roor', 'Smarter Contact')
+                  AND (lead_source_tag IS NULL OR lead_source_tag != 'ReadyMode')
             """, (start_date, end_date))
             metrics['sms_leads'] = cur.fetchone()['count']
-
-            # 6b. Unknown/Other Leads (NULL or unrecognized lead_source_tag)
-            cur.execute("""
-                SELECT COUNT(*) as count
-                FROM stage_changes
-                WHERE changed_at >= %s
-                  AND changed_at < %s
-                  AND stage_to = 'ACQ - Qualified'
-                  AND (lead_source_tag IS NULL
-                       OR lead_source_tag NOT IN ('ReadyMode', 'Roor', 'Smarter Contact'))
-            """, (start_date, end_date))
-            metrics['unknown_leads'] = cur.fetchone()['count']
 
             # 7. Deals Closed (Under Contract → Closed transitions during the period)
             # This counts any deal that closed during the period, regardless of when
@@ -525,9 +513,8 @@ def write_to_google_sheets(
         ["Throw-away Leads", metrics['throwaway_leads'], "Qualified leads moved to disqualified stages during this period"],
         ["Net Total Leads", metrics['net_total_leads'], "Qualified - Throwaway"],
         ["Total Offers", metrics['total_offers'], "Leads reaching ACQ - Offers Made during this period"],
-        ["ReadyMode Leads", metrics['readymode_leads'], "Qualified leads from cold calling"],
-        ["SMS Leads", metrics['sms_leads'], "Qualified leads from Roor + Smarter Contact"],
-        ["Unknown/Other Leads", metrics['unknown_leads'], "Qualified leads with no source tag"],
+        ["Cold Calling Leads", metrics['cold_calling_leads'], "Qualified leads from ReadyMode"],
+        ["SMS Leads", metrics['sms_leads'], "Qualified leads from SMS campaigns (all non-ReadyMode)"],
         ["Deals Closed", metrics['deals_closed'], "Under Contract → Closed during this period (any contract)"],
         ["Conversion Rate", f"{metrics['conversion_rate']}%", "Deals Closed ÷ Qualified Leads"],
         [],
@@ -559,10 +546,10 @@ def write_to_google_sheets(
     # Format header rows
     worksheet.format('A1', {'textFormat': {'bold': True, 'fontSize': 14}})
     worksheet.format('A4:C4', {'textFormat': {'bold': True}, 'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}})
-    worksheet.format('A15', {'textFormat': {'bold': True, 'italic': True}})  # Contract Metrics section
-    worksheet.format('A21', {'textFormat': {'bold': True, 'italic': True}})  # Historical Close Rate section
-    worksheet.format('A26', {'textFormat': {'bold': True, 'italic': True}})  # Forward-Looking section
-    worksheet.format('A29', {'textFormat': {'bold': True, 'italic': True}})  # Manual Entry section
+    worksheet.format('A14', {'textFormat': {'bold': True, 'italic': True}})  # Contract Metrics section
+    worksheet.format('A20', {'textFormat': {'bold': True, 'italic': True}})  # Historical Close Rate section
+    worksheet.format('A25', {'textFormat': {'bold': True, 'italic': True}})  # Forward-Looking section
+    worksheet.format('A28', {'textFormat': {'bold': True, 'italic': True}})  # Manual Entry section
 
     # Adjust column widths
     worksheet.set_basic_filter('A4:C35')
@@ -625,9 +612,8 @@ def print_report(metrics: Dict[str, Any], start_date: datetime, end_date: dateti
     print(f"{'Throw-away Leads':<30} {metrics['throwaway_leads']:>10}")
     print(f"{'Net Total Leads':<30} {metrics['net_total_leads']:>10}")
     print(f"{'Total Offers':<30} {metrics['total_offers']:>10}")
-    print(f"{'ReadyMode Leads (Cold Call)':<30} {metrics['readymode_leads']:>10}")
-    print(f"{'SMS Leads (Text)':<30} {metrics['sms_leads']:>10}")
-    print(f"{'Unknown/Other Leads':<30} {metrics['unknown_leads']:>10}")
+    print(f"{'Cold Calling Leads':<30} {metrics['cold_calling_leads']:>10}")
+    print(f"{'SMS Leads':<30} {metrics['sms_leads']:>10}")
     print(f"{'Deals Closed':<30} {metrics['deals_closed']:>10}")
     print(f"{'Conversion Rate':<30} {metrics['conversion_rate']:>9}%")
     print("-" * 42)
