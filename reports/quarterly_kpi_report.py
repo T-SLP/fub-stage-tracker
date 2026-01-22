@@ -167,6 +167,87 @@ def query_kpi_metrics(start_date: datetime, end_date: datetime) -> Dict[str, Any
             """, (start_date, end_date))
             metrics['sms_leads'] = cur.fetchone()['count']
 
+            # 6b. Lead Source Conversion - Track how leads from each source progress
+            # Cold Calling Leads → Under Contract (leads qualified this period that ever reached Under Contract)
+            cur.execute("""
+                WITH cold_calling_qualified AS (
+                    SELECT DISTINCT person_id
+                    FROM stage_changes
+                    WHERE changed_at >= %s
+                      AND changed_at < %s
+                      AND stage_to = 'ACQ - Qualified'
+                      AND lead_source_tag = 'ReadyMode'
+                )
+                SELECT COUNT(DISTINCT ccq.person_id) as count
+                FROM cold_calling_qualified ccq
+                WHERE EXISTS (
+                    SELECT 1 FROM stage_changes sc
+                    WHERE sc.person_id = ccq.person_id
+                      AND sc.stage_to = 'ACQ - Under Contract'
+                )
+            """, (start_date, end_date))
+            metrics['cold_calling_to_under_contract'] = cur.fetchone()['count']
+
+            # Cold Calling Leads → Closed
+            cur.execute("""
+                WITH cold_calling_qualified AS (
+                    SELECT DISTINCT person_id
+                    FROM stage_changes
+                    WHERE changed_at >= %s
+                      AND changed_at < %s
+                      AND stage_to = 'ACQ - Qualified'
+                      AND lead_source_tag = 'ReadyMode'
+                )
+                SELECT COUNT(DISTINCT ccq.person_id) as count
+                FROM cold_calling_qualified ccq
+                WHERE EXISTS (
+                    SELECT 1 FROM stage_changes sc
+                    WHERE sc.person_id = ccq.person_id
+                      AND sc.stage_to = 'Closed'
+                )
+            """, (start_date, end_date))
+            metrics['cold_calling_to_closed'] = cur.fetchone()['count']
+
+            # SMS Leads → Under Contract
+            cur.execute("""
+                WITH sms_qualified AS (
+                    SELECT DISTINCT person_id
+                    FROM stage_changes
+                    WHERE changed_at >= %s
+                      AND changed_at < %s
+                      AND stage_to = 'ACQ - Qualified'
+                      AND (lead_source_tag IS NULL OR lead_source_tag != 'ReadyMode')
+                )
+                SELECT COUNT(DISTINCT sq.person_id) as count
+                FROM sms_qualified sq
+                WHERE EXISTS (
+                    SELECT 1 FROM stage_changes sc
+                    WHERE sc.person_id = sq.person_id
+                      AND sc.stage_to = 'ACQ - Under Contract'
+                )
+            """, (start_date, end_date))
+            metrics['sms_to_under_contract'] = cur.fetchone()['count']
+
+            # SMS Leads → Closed
+            cur.execute("""
+                WITH sms_qualified AS (
+                    SELECT DISTINCT person_id
+                    FROM stage_changes
+                    WHERE changed_at >= %s
+                      AND changed_at < %s
+                      AND stage_to = 'ACQ - Qualified'
+                      AND (lead_source_tag IS NULL OR lead_source_tag != 'ReadyMode')
+                )
+                SELECT COUNT(DISTINCT sq.person_id) as count
+                FROM sms_qualified sq
+                WHERE EXISTS (
+                    SELECT 1 FROM stage_changes sc
+                    WHERE sc.person_id = sq.person_id
+                      AND sc.stage_to = 'Closed'
+                )
+            """, (start_date, end_date))
+            metrics['sms_to_closed'] = cur.fetchone()['count']
+
             # 7. Deals Closed (Under Contract → Closed transitions during the period)
             # This counts any deal that closed during the period, regardless of when
             # it went under contract
@@ -518,6 +599,12 @@ def write_to_google_sheets(
         ["Deals Closed", metrics['deals_closed'], "Under Contract → Closed during this period (any contract)"],
         ["Conversion Rate", f"{metrics['conversion_rate']}%", "Deals Closed ÷ Qualified Leads"],
         [],
+        ["--- Lead Source Conversion (Leads Qualified This Period) ---", "", ""],
+        ["Cold Calling → Under Contract", metrics['cold_calling_to_under_contract'], f"of {metrics['cold_calling_leads']} cold calling leads"],
+        ["Cold Calling → Closed", metrics['cold_calling_to_closed'], f"of {metrics['cold_calling_leads']} cold calling leads"],
+        ["SMS → Under Contract", metrics['sms_to_under_contract'], f"of {metrics['sms_leads']} SMS leads"],
+        ["SMS → Closed", metrics['sms_to_closed'], f"of {metrics['sms_leads']} SMS leads"],
+        [],
         ["--- Contract Metrics (Contracts Initiated This Period) ---", "", ""],
         ["Contract-to-Close Rate", f"{metrics['contract_to_close_rate']}%", "% of contracts from this period that closed (excludes pending)"],
         ["Contracts Closed", metrics['contracts_closed'], "Contracts initiated this period → now Closed"],
@@ -546,10 +633,11 @@ def write_to_google_sheets(
     # Format header rows
     worksheet.format('A1', {'textFormat': {'bold': True, 'fontSize': 14}})
     worksheet.format('A4:C4', {'textFormat': {'bold': True}, 'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}})
-    worksheet.format('A14', {'textFormat': {'bold': True, 'italic': True}})  # Contract Metrics section
-    worksheet.format('A20', {'textFormat': {'bold': True, 'italic': True}})  # Historical Close Rate section
-    worksheet.format('A25', {'textFormat': {'bold': True, 'italic': True}})  # Forward-Looking section
-    worksheet.format('A28', {'textFormat': {'bold': True, 'italic': True}})  # Manual Entry section
+    worksheet.format('A14', {'textFormat': {'bold': True, 'italic': True}})  # Lead Source Conversion section
+    worksheet.format('A20', {'textFormat': {'bold': True, 'italic': True}})  # Contract Metrics section
+    worksheet.format('A26', {'textFormat': {'bold': True, 'italic': True}})  # Historical Close Rate section
+    worksheet.format('A31', {'textFormat': {'bold': True, 'italic': True}})  # Forward-Looking section
+    worksheet.format('A34', {'textFormat': {'bold': True, 'italic': True}})  # Manual Entry section
 
     # Adjust column widths
     worksheet.set_basic_filter('A4:C35')
@@ -616,6 +704,13 @@ def print_report(metrics: Dict[str, Any], start_date: datetime, end_date: dateti
     print(f"{'SMS Leads':<30} {metrics['sms_leads']:>10}")
     print(f"{'Deals Closed':<30} {metrics['deals_closed']:>10}")
     print(f"{'Conversion Rate':<30} {metrics['conversion_rate']:>9}%")
+    print("-" * 42)
+
+    print("\n--- Lead Source Conversion (Leads Qualified This Period) ---")
+    print(f"{'Cold Calling → Under Contract':<30} {metrics['cold_calling_to_under_contract']:>10}  (of {metrics['cold_calling_leads']} cold calling leads)")
+    print(f"{'Cold Calling → Closed':<30} {metrics['cold_calling_to_closed']:>10}  (of {metrics['cold_calling_leads']} cold calling leads)")
+    print(f"{'SMS → Under Contract':<30} {metrics['sms_to_under_contract']:>10}  (of {metrics['sms_leads']} SMS leads)")
+    print(f"{'SMS → Closed':<30} {metrics['sms_to_closed']:>10}  (of {metrics['sms_leads']} SMS leads)")
     print("-" * 42)
 
     print("\n--- Contract Metrics (Contracts Initiated This Period) ---")
