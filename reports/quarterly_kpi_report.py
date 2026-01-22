@@ -415,53 +415,6 @@ def query_kpi_metrics(start_date: datetime, end_date: datetime) -> Dict[str, Any
             metrics['pipeline_deals'] = len(pipeline_deals_list)
             metrics['pipeline_deals_list'] = pipeline_deals_list
 
-            # 11. Historical Close Rate (All-time)
-            # Of ALL contracts that have ever been resolved (closed or fell through),
-            # what percentage closed? This gives a more reliable close rate based on
-            # full history rather than a single quarter's small sample size.
-            cur.execute("""
-                WITH all_contracts AS (
-                    -- Get all leads that have ever entered Under Contract
-                    SELECT DISTINCT person_id
-                    FROM stage_changes
-                    WHERE stage_to = 'ACQ - Under Contract'
-                ),
-                latest_stages AS (
-                    -- For each, find their most recent stage
-                    SELECT DISTINCT ON (sc.person_id)
-                        sc.person_id,
-                        sc.stage_to as current_stage
-                    FROM stage_changes sc
-                    INNER JOIN all_contracts ac ON sc.person_id = ac.person_id
-                    ORDER BY sc.person_id, sc.changed_at DESC
-                ),
-                resolved AS (
-                    -- Only count resolved contracts (not still pending)
-                    SELECT
-                        current_stage,
-                        CASE WHEN current_stage = 'Closed' THEN 1 ELSE 0 END as is_closed
-                    FROM latest_stages
-                    WHERE current_stage != 'ACQ - Under Contract'
-                )
-                SELECT
-                    COUNT(*) as total_resolved,
-                    SUM(is_closed) as total_closed
-                FROM resolved
-            """)
-            historical_results = cur.fetchone()
-            total_resolved = historical_results['total_resolved'] or 0
-            total_closed = historical_results['total_closed'] or 0
-
-            metrics['historical_total_resolved'] = total_resolved
-            metrics['historical_total_closed'] = total_closed
-
-            if total_resolved > 0:
-                metrics['historical_close_rate'] = round(
-                    (total_closed / total_resolved) * 100, 2
-                )
-            else:
-                metrics['historical_close_rate'] = 0.0
-
     finally:
         conn.close()
 
@@ -620,18 +573,13 @@ def write_to_google_sheets(
         ["Contract Cancellation Rate", f"{metrics['contract_cancellation_rate']}%", "Fell Through ÷ Signed Contracts (includes pending in denominator)"],
         ["Contracts Still Pending", metrics['contracts_still_pending'], "Contracts initiated this period → still Under Contract"],
         [],
-        ["--- Historical Close Rate (All-Time) ---", "", ""],
-        ["Historical Close Rate", f"{metrics['historical_close_rate']}%", f"Based on {metrics['historical_total_resolved']} resolved contracts all-time"],
-        ["Total Closed (All-Time)", metrics['historical_total_closed'], "All contracts that ever closed"],
-        ["Total Resolved (All-Time)", metrics['historical_total_resolved'], "All contracts that closed or fell through"],
-        [],
         ["--- Forward-Looking ---", "", ""],
         ["Pipeline Deals", metrics['pipeline_deals'], "All deals currently in Under Contract stage"],
         [],
         ["--- Manual Entry Below ---", "", ""],
-        ["Cost per Deal", "", "Enter manually"],
-        ["Avg Deal Gross Profit", "", "Enter manually"],
-        ["Number of Sold Properties", "", "Enter manually"],
+        ["Cost per Closed Deal", "", "Total costs divided by number of closed deals"],
+        ["Avg Deal Gross Profit", "", "Average profit from deals that completed full buy-sell cycle"],
+        ["Number of Sold Properties", "", "Properties sold during this reporting period"],
         [],
         ["Report Generated:", datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'), ""],
     ]
@@ -643,12 +591,11 @@ def write_to_google_sheets(
     worksheet.format('A4:C4', {'textFormat': {'bold': True}, 'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}})
     worksheet.format('A14', {'textFormat': {'bold': True, 'italic': True}})  # Lead Source Conversion section
     worksheet.format('A20', {'textFormat': {'bold': True, 'italic': True}})  # Contract Metrics section
-    worksheet.format('A28', {'textFormat': {'bold': True, 'italic': True}})  # Historical Close Rate section
-    worksheet.format('A33', {'textFormat': {'bold': True, 'italic': True}})  # Forward-Looking section
-    worksheet.format('A36', {'textFormat': {'bold': True, 'italic': True}})  # Manual Entry section
+    worksheet.format('A28', {'textFormat': {'bold': True, 'italic': True}})  # Forward-Looking section
+    worksheet.format('A31', {'textFormat': {'bold': True, 'italic': True}})  # Manual Entry section
 
     # Adjust column widths
-    worksheet.set_basic_filter('A4:C41')
+    worksheet.set_basic_filter('A4:C36')
 
     # Create period label for detail tabs
     period_label = f"Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
@@ -730,12 +677,6 @@ def print_report(metrics: Dict[str, Any], start_date: datetime, end_date: dateti
     print(f"{'Contracts Still Pending':<30} {metrics['contracts_still_pending']:>10}")
     print("-" * 42)
 
-    print("\n--- Historical Close Rate (All-Time) ---")
-    print(f"{'Historical Close Rate':<30} {metrics['historical_close_rate']:>9}%")
-    print(f"{'Total Closed (All-Time)':<30} {metrics['historical_total_closed']:>10}")
-    print(f"{'Total Resolved (All-Time)':<30} {metrics['historical_total_resolved']:>10}")
-    print("-" * 42)
-
     print("\n--- Forward-Looking ---")
     print(f"{'Pipeline Deals':<30} {metrics['pipeline_deals']:>10}")
     print("-" * 42)
@@ -788,7 +729,7 @@ def print_report(metrics: Dict[str, Any], start_date: datetime, end_date: dateti
     print("\nManual entry fields (not populated):")
     print("  - Cost per Cold Calling Lead")
     print("  - Cost per SMS Lead")
-    print("  - Cost per Deal")
+    print("  - Cost per Closed Deal")
     print("  - Avg Deal Gross Profit")
     print("  - Number of Sold Properties")
     print("\n(Dry run - no data written to Google Sheets)")
