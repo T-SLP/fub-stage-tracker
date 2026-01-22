@@ -281,15 +281,7 @@ def query_kpi_metrics(start_date: datetime, end_date: datetime) -> Dict[str, Any
                 })
             metrics['deals_closed_list'] = deals_closed_list
 
-            # 8. Conversion Rate (Deals Closed / Qualified * 100)
-            if metrics['total_qualified'] > 0:
-                metrics['conversion_rate'] = round(
-                    (metrics['deals_closed'] / metrics['total_qualified']) * 100, 2
-                )
-            else:
-                metrics['conversion_rate'] = 0.0
-
-            # 9. Contract-to-Close Rate with Lead Details
+            # 8. Contract-to-Close Rate with Lead Details
             # Find leads that entered "Under Contract" during the report period,
             # then check their CURRENT (most recent) stage to determine outcome
             cur.execute("""
@@ -373,6 +365,15 @@ def query_kpi_metrics(start_date: datetime, end_date: datetime) -> Dict[str, Any
                 metrics['contracts_fell_through'] +
                 metrics['contracts_still_pending']
             )
+
+            # Conversion Rate = Signed Contracts / Total Qualified Leads * 100
+            # Shows what % of qualified leads went under contract
+            if metrics['total_qualified'] > 0:
+                metrics['conversion_rate'] = round(
+                    (metrics['signed_contracts'] / metrics['total_qualified']) * 100, 2
+                )
+            else:
+                metrics['conversion_rate'] = 0.0
 
             # Contract Cancellation Rate = Fell Through / Signed Contracts * 100
             # Includes pending contracts in denominator (rate may change as pending resolve)
@@ -604,8 +605,6 @@ def write_to_google_sheets(
         ["Cost per Cold Calling Lead", "", "Enter manually"],
         ["SMS Leads", metrics['sms_leads'], "Qualified leads from SMS campaigns (all non-ReadyMode)"],
         ["Cost per SMS Lead", "", "Enter manually"],
-        ["Deals Closed", metrics['deals_closed'], "Under Contract → Closed during this period (any contract)"],
-        ["Conversion Rate", f"{metrics['conversion_rate']}%", "Deals Closed ÷ Qualified Leads"],
         [],
         ["--- Lead Source Conversion (Leads Qualified This Period) ---", "", ""],
         ["Cold Calling → Under Contract", metrics['cold_calling_to_under_contract'], f"of {metrics['cold_calling_leads']} cold calling leads"],
@@ -615,6 +614,7 @@ def write_to_google_sheets(
         [],
         ["--- Contract Metrics (Contracts Initiated This Period) ---", "", ""],
         ["Signed Contracts", metrics['signed_contracts'], "Total contracts initiated this period"],
+        ["Conversion Rate", f"{metrics['conversion_rate']}%", "Signed Contracts ÷ Total Qualified Leads"],
         ["Contracts Closed", metrics['contracts_closed'], "Contracts initiated this period → now Closed"],
         ["Contracts Fell Through", metrics['contracts_fell_through'], "Contracts initiated this period → moved to other stage"],
         ["Contract Cancellation Rate", f"{metrics['contract_cancellation_rate']}%", "Fell Through ÷ Signed Contracts (includes pending in denominator)"],
@@ -641,14 +641,14 @@ def write_to_google_sheets(
     # Format header rows
     worksheet.format('A1', {'textFormat': {'bold': True, 'fontSize': 14}})
     worksheet.format('A4:C4', {'textFormat': {'bold': True}, 'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}})
-    worksheet.format('A16', {'textFormat': {'bold': True, 'italic': True}})  # Lead Source Conversion section
-    worksheet.format('A22', {'textFormat': {'bold': True, 'italic': True}})  # Contract Metrics section
-    worksheet.format('A29', {'textFormat': {'bold': True, 'italic': True}})  # Historical Close Rate section
-    worksheet.format('A34', {'textFormat': {'bold': True, 'italic': True}})  # Forward-Looking section
-    worksheet.format('A37', {'textFormat': {'bold': True, 'italic': True}})  # Manual Entry section
+    worksheet.format('A14', {'textFormat': {'bold': True, 'italic': True}})  # Lead Source Conversion section
+    worksheet.format('A20', {'textFormat': {'bold': True, 'italic': True}})  # Contract Metrics section
+    worksheet.format('A28', {'textFormat': {'bold': True, 'italic': True}})  # Historical Close Rate section
+    worksheet.format('A33', {'textFormat': {'bold': True, 'italic': True}})  # Forward-Looking section
+    worksheet.format('A36', {'textFormat': {'bold': True, 'italic': True}})  # Manual Entry section
 
     # Adjust column widths
-    worksheet.set_basic_filter('A4:C42')
+    worksheet.set_basic_filter('A4:C41')
 
     # Create period label for detail tabs
     period_label = f"Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
@@ -712,8 +712,6 @@ def print_report(metrics: Dict[str, Any], start_date: datetime, end_date: dateti
     print(f"{'Cost per Cold Calling Lead':<30} {'(manual)':>10}")
     print(f"{'SMS Leads':<30} {metrics['sms_leads']:>10}")
     print(f"{'Cost per SMS Lead':<30} {'(manual)':>10}")
-    print(f"{'Deals Closed':<30} {metrics['deals_closed']:>10}")
-    print(f"{'Conversion Rate':<30} {metrics['conversion_rate']:>9}%")
     print("-" * 42)
 
     print("\n--- Lead Source Conversion (Leads Qualified This Period) ---")
@@ -725,6 +723,7 @@ def print_report(metrics: Dict[str, Any], start_date: datetime, end_date: dateti
 
     print("\n--- Contract Metrics (Contracts Initiated This Period) ---")
     print(f"{'Signed Contracts':<30} {metrics['signed_contracts']:>10}")
+    print(f"{'Conversion Rate':<30} {metrics['conversion_rate']:>9}%")
     print(f"{'Contracts Closed':<30} {metrics['contracts_closed']:>10}")
     print(f"{'Contracts Fell Through':<30} {metrics['contracts_fell_through']:>10}")
     print(f"{'Contract Cancellation Rate':<30} {metrics['contract_cancellation_rate']:>9}%")
