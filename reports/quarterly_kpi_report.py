@@ -7,7 +7,7 @@ Generates a Google Sheets report with key performance indicators:
 Auto-populated metrics:
 - Total Qualified Leads
 - Throw-away Leads
-- Net Total Leads (Qualified - Throwaway)
+- Net Total Qualified Leads (Qualified - Throwaway)
 - Total Offers
 - ReadyMode Leads (cold calling)
 - SMS Leads (Roor + Smarter Contact)
@@ -132,7 +132,7 @@ def query_kpi_metrics(start_date: datetime, end_date: datetime) -> Dict[str, Any
             """, (start_date, end_date, tuple(QUALIFIED_STAGES), tuple(DISQUALIFIED_STAGES)))
             metrics['throwaway_leads'] = cur.fetchone()['count']
 
-            # 3. Net Total Leads (calculated)
+            # 3. Net Total Qualified Leads (calculated)
             metrics['net_total_leads'] = metrics['total_qualified'] - metrics['throwaway_leads']
 
             # 4. Total Offers
@@ -598,7 +598,7 @@ def write_to_google_sheets(
         ["Metric", "Value", "Notes"],
         ["Total Qualified Leads", metrics['total_qualified'], "Leads reaching ACQ - Qualified during this period"],
         ["Throw-away Leads", metrics['throwaway_leads'], "Qualified leads moved to disqualified stages during this period"],
-        ["Net Total Leads", metrics['net_total_leads'], "Qualified - Throwaway"],
+        ["Net Total Qualified Leads", metrics['net_total_leads'], "Qualified - Throwaway"],
         ["Total Offers", metrics['total_offers'], "Leads reaching ACQ - Offers Made during this period"],
         ["Cold Calling Leads", metrics['cold_calling_leads'], "Qualified leads from ReadyMode"],
         ["Cost per Cold Calling Lead", "", "Enter manually"],
@@ -706,7 +706,7 @@ def print_report(metrics: Dict[str, Any], start_date: datetime, end_date: dateti
     print("-" * 42)
     print(f"{'Total Qualified Leads':<30} {metrics['total_qualified']:>10}")
     print(f"{'Throw-away Leads':<30} {metrics['throwaway_leads']:>10}")
-    print(f"{'Net Total Leads':<30} {metrics['net_total_leads']:>10}")
+    print(f"{'Net Total Qualified Leads':<30} {metrics['net_total_leads']:>10}")
     print(f"{'Total Offers':<30} {metrics['total_offers']:>10}")
     print(f"{'Cold Calling Leads':<30} {metrics['cold_calling_leads']:>10}")
     print(f"{'Cost per Cold Calling Lead':<30} {'(manual)':>10}")
