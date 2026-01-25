@@ -127,6 +127,8 @@ def query_stage_metrics(start_date, end_date):
         # where assigned_user_name wasn't populated.
         # For records before Dec 19, 2025 with no agent info, default to Madeleine Penales
         # (she was the only acquisition agent at that time)
+        # Count DISTINCT person_id to avoid counting the same lead multiple times
+        # (e.g., if a lead moves out of and back into a stage)
         cursor.execute("""
             SELECT
                 COALESCE(
@@ -135,7 +137,7 @@ def query_stage_metrics(start_date, end_date):
                     CASE WHEN changed_at < '2025-12-19' THEN 'Madeleine Penales' ELSE 'Unassigned' END
                 ) as agent,
                 stage_to,
-                COUNT(*) as count
+                COUNT(DISTINCT person_id) as count
             FROM stage_changes
             WHERE changed_at >= %s
               AND changed_at < %s
