@@ -53,6 +53,13 @@ TRACKED_STAGES = [
     "ACQ - Closed Won",
 ]
 
+# Agents to include in the report (others will be filtered out)
+# Set to None to include all agents
+INCLUDED_AGENTS = [
+    "Dante Hernandez",
+    "Madeleine Penales",
+]
+
 
 def get_date_range(days_back: int = None, previous_week: bool = False) -> tuple[datetime, datetime]:
     """
@@ -450,14 +457,41 @@ def write_to_google_sheets(
         "3x Sequences",
     ]
 
-    # Collect agent data
+    # Collect agent data - filter to included agents only
     all_agents = set(stage_metrics.keys()) | set(call_metrics.keys())
     all_agents.discard('Unassigned')
 
-    agent_rows = []
+    # Filter agents if INCLUDED_AGENTS is set
+    if INCLUDED_AGENTS:
+        all_agents = [a for a in sorted(all_agents) if a in INCLUDED_AGENTS]
+    else:
+        all_agents = sorted(all_agents)
+
     week_label = start_date.strftime('%Y-%m-%d')
 
-    for agent in sorted(all_agents):
+    # Metric labels for the Latest tab (transposed view)
+    metric_labels = [
+        "Offers Made",
+        "Contracts Sent",
+        "Under Contract",
+        "Closed",
+        "Outbound Calls",
+        "Unique Leads Dialed",
+        "Unique Leads Connected",
+        "Conversations (2+ min)",
+        "Connection Rate",
+        "Talk Time (min)",
+        "Avg Call (min)",
+        "Single Dial",
+        "2x Sequences",
+        "3x Sequences",
+    ]
+
+    # Collect data for each agent
+    agent_data = {}
+    history_rows_to_add = []
+
+    for agent in all_agents:
         stage_data = stage_metrics.get(agent, {})
         offers = stage_data.get("ACQ - Offers Made", 0)
         contracts = stage_data.get("ACQ - Contract Sent", 0)
@@ -478,15 +512,18 @@ def write_to_google_sheets(
         double_sequences = call_data.get('double_dial_sequences', 0)
         triple_sequences = call_data.get('triple_dial_sequences', 0)
 
-        # Row for Latest tab (no week column)
-        latest_row = [agent, offers, contracts, under_contract, closed, outbound_calls, unique_leads, unique_leads_connected, conversations, connection_rate, talk_time, avg_call_min, single_dial, double_sequences, triple_sequences]
+        # Store metrics in order for this agent
+        agent_data[agent] = [
+            offers, contracts, under_contract, closed, outbound_calls,
+            unique_leads, unique_leads_connected, conversations, connection_rate,
+            talk_time, avg_call_min, single_dial, double_sequences, triple_sequences
+        ]
 
         # Row for History tab (with week column)
         history_row = [week_label, agent, offers, contracts, under_contract, closed, outbound_calls, unique_leads, unique_leads_connected, conversations, connection_rate, talk_time, avg_call_min, single_dial, double_sequences, triple_sequences]
+        history_rows_to_add.append(history_row)
 
-        agent_rows.append({'latest': latest_row, 'history': history_row})
-
-    # === Write to "Latest" tab ===
+    # === Write to "Latest" tab (transposed: metrics as rows, agents as columns) ===
     print("  Writing to 'Latest' tab...")
     if "Latest" in existing_tabs:
         latest_ws = spreadsheet.worksheet("Latest")
@@ -494,18 +531,19 @@ def write_to_google_sheets(
     else:
         latest_ws = spreadsheet.add_worksheet(title="Latest", rows=100, cols=20, index=0)
 
-    latest_rows = [latest_headers]
-    for row_data in agent_rows:
-        latest_rows.append(row_data['latest'])
+    # Build transposed data: first column is metric name, then one column per agent
+    latest_rows = []
 
-    # Add unassigned row if exists
-    if 'Unassigned' in stage_metrics:
-        stage_data = stage_metrics['Unassigned']
-        offers = stage_data.get("ACQ - Offers Made", 0)
-        contracts = stage_data.get("ACQ - Contract Sent", 0)
-        under_contract = stage_data.get("ACQ - Under Contract", 0)
-        closed = stage_data.get("Closed", 0) + stage_data.get("ACQ - Closed Won", 0)
-        latest_rows.append(["Unassigned", offers, contracts, under_contract, closed, 0, 0, 0, 0, "0%", 0, 0, 0, 0, 0])
+    # Header row: "Metric" followed by agent names
+    header_row = ["Metric"] + list(all_agents)
+    latest_rows.append(header_row)
+
+    # One row per metric
+    for i, metric_label in enumerate(metric_labels):
+        row = [metric_label]
+        for agent in all_agents:
+            row.append(agent_data[agent][i])
+        latest_rows.append(row)
 
     # Add metadata
     latest_rows.append([])
@@ -513,7 +551,11 @@ def write_to_google_sheets(
     latest_rows.append(["Date Range:", f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"])
 
     latest_ws.update(latest_rows, 'A1')
-    latest_ws.format('A1:O1', {'textFormat': {'bold': True}})
+
+    # Format: bold first row and first column
+    num_agents = len(all_agents)
+    latest_ws.format(f'A1:{chr(65 + num_agents)}1', {'textFormat': {'bold': True}})
+    latest_ws.format('A1:A20', {'textFormat': {'bold': True}})
 
     # === Write to "History" tab ===
     print("  Writing to 'History' tab...")
@@ -528,17 +570,16 @@ def write_to_google_sheets(
                 print(f"  Week {week_label} already exists in History, skipping...")
             else:
                 # Insert new rows at row 2 (after header)
-                new_rows = [row_data['history'] for row_data in agent_rows]
-                history_ws.insert_rows(new_rows, row=2)
+                history_ws.insert_rows(history_rows_to_add, row=2)
         else:
             # Empty sheet, just add header and data
-            history_rows = [history_headers] + [row_data['history'] for row_data in agent_rows]
+            history_rows = [history_headers] + history_rows_to_add
             history_ws.update(history_rows, 'A1')
             history_ws.format('A1:P1', {'textFormat': {'bold': True}})
     else:
         # Create new History tab
         history_ws = spreadsheet.add_worksheet(title="History", rows=1000, cols=20, index=1)
-        history_rows = [history_headers] + [row_data['history'] for row_data in agent_rows]
+        history_rows = [history_headers] + history_rows_to_add
         history_ws.update(history_rows, 'A1')
         history_ws.format('A1:P1', {'textFormat': {'bold': True}})
 
