@@ -123,17 +123,19 @@ def query_stage_metrics(start_date: datetime, end_date: datetime) -> Dict[str, D
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
             # Query stage changes within date range, grouped by agent and stage
+            # Use COALESCE to fall back to raw_payload->>'assignedTo' for older records
+            # where assigned_user_name wasn't populated
             cur.execute("""
                 SELECT
-                    COALESCE(assigned_user_name, 'Unassigned') as agent,
+                    COALESCE(assigned_user_name, raw_payload->>'assignedTo', 'Unassigned') as agent,
                     stage_to,
                     COUNT(*) as count
                 FROM stage_changes
                 WHERE changed_at >= %s
                   AND changed_at < %s
                   AND stage_to IN %s
-                GROUP BY assigned_user_name, stage_to
-                ORDER BY assigned_user_name, stage_to
+                GROUP BY COALESCE(assigned_user_name, raw_payload->>'assignedTo', 'Unassigned'), stage_to
+                ORDER BY 1, 2
             """, (start_date, end_date, tuple(TRACKED_STAGES)))
 
             for row in cur.fetchall():

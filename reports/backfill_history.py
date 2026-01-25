@@ -123,16 +123,18 @@ def query_stage_metrics(start_date, end_date):
         start_dt = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=EASTERN_TZ)
         end_dt = datetime.combine(end_date, datetime.max.time()).replace(tzinfo=EASTERN_TZ)
 
+        # Use COALESCE to fall back to raw_payload->>'assignedTo' for older records
+        # where assigned_user_name wasn't populated
         cursor.execute("""
             SELECT
-                COALESCE(assigned_user_name, 'Unassigned') as agent,
+                COALESCE(assigned_user_name, raw_payload->>'assignedTo', 'Unassigned') as agent,
                 stage_to,
                 COUNT(*) as count
             FROM stage_changes
             WHERE changed_at >= %s
               AND changed_at < %s
               AND stage_to IN %s
-            GROUP BY assigned_user_name, stage_to
+            GROUP BY COALESCE(assigned_user_name, raw_payload->>'assignedTo', 'Unassigned'), stage_to
         """, (start_dt, end_dt, tuple(TRACKED_STAGES)))
 
         results = {}
