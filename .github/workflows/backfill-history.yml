@@ -1,0 +1,36 @@
+name: Backfill History
+
+on:
+  # Manual trigger only
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Number of days to backfill'
+        required: false
+        default: '60'
+        type: string
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r reports/requirements.txt
+
+      - name: Run backfill
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          FUB_API_KEY: ${{ secrets.FUB_API_KEY }}
+          GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
+        run: |
+          python reports/backfill_history.py --days ${{ github.event.inputs.days }}
