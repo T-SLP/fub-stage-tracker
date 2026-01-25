@@ -15,7 +15,11 @@ import argparse
 import base64
 import json
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Dict, List, Any, Optional
+
+# Eastern timezone for week boundaries
+EASTERN_TZ = ZoneInfo("America/New_York")
 from pathlib import Path
 
 # Load .env file from project root (for local development)
@@ -37,7 +41,8 @@ from google.oauth2.service_account import Credentials
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
 FUB_API_KEY = os.getenv("FUB_API_KEY")
 GOOGLE_SHEETS_CREDENTIALS = os.getenv("GOOGLE_SHEETS_CREDENTIALS")  # JSON string
-GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID")  # The spreadsheet ID to write to
+# Weekly Agent Report spreadsheet ID
+WEEKLY_AGENT_SHEET_ID = "1MNnP-w70h7gv7NnpRxO6GZstq9m6wW5USAozzCev6gs"
 
 # Stage names to track (must match exactly what's in the database)
 TRACKED_STAGES = [
@@ -54,22 +59,23 @@ def get_date_range(days_back: int = None, previous_week: bool = False) -> tuple[
     Calculate the date range for the report.
 
     Modes:
-    - previous_week=True: Returns the full previous week (Mon 00:00 to Sun 23:59)
+    - previous_week=True: Returns the full previous week (Mon 00:00 to Sun 23:59 Eastern)
     - days_back specified: Simple "last N days" calculation
     - Default (auto): On Monday, returns previous week. Otherwise, returns current week so far.
 
-    All modes use Monday-Sunday week boundaries to match FUB's standard report format.
+    All modes use Monday-Sunday week boundaries in Eastern timezone to match FUB's standard report format.
     """
-    now = datetime.now(timezone.utc)
+    # Use Eastern timezone for week boundaries
+    now_eastern = datetime.now(EASTERN_TZ)
 
     if days_back is not None:
         # Legacy behavior: simple days-back calculation
-        end_date = now
+        end_date = now_eastern
         start_date = end_date - timedelta(days=days_back)
         return start_date, end_date
 
     # weekday() returns 0 for Monday, 6 for Sunday
-    days_since_monday = now.weekday()
+    days_since_monday = now_eastern.weekday()
 
     # Determine if we should report on previous week
     # On Monday (weekday=0), auto mode reports the previous full week
@@ -77,8 +83,8 @@ def get_date_range(days_back: int = None, previous_week: bool = False) -> tuple[
 
     if use_previous_week:
         # Previous week: Monday through Sunday of last week
-        # First, find the start of the current week
-        start_of_current_week = now - timedelta(days=days_since_monday)
+        # First, find the start of the current week (Monday 00:00 Eastern)
+        start_of_current_week = now_eastern - timedelta(days=days_since_monday)
         start_of_current_week = start_of_current_week.replace(hour=0, minute=0, second=0, microsecond=0)
 
         # Previous week starts 7 days before current week
@@ -88,9 +94,9 @@ def get_date_range(days_back: int = None, previous_week: bool = False) -> tuple[
         end_date = start_of_current_week
     else:
         # Current week: Monday through now
-        start_of_week = now - timedelta(days=days_since_monday)
+        start_of_week = now_eastern - timedelta(days=days_since_monday)
         start_date = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = now
+        end_date = now_eastern
 
     return start_date, end_date
 
@@ -234,18 +240,28 @@ def query_call_metrics(start_date: datetime, end_date: datetime, user_ids: Dict[
     call_metrics = {}
     for user_name in user_ids.keys():
         call_metrics[user_name] = {
-            'calls': 0,
-            'connected': 0,
-            'conversations': 0,
-            'talk_time_min': 0
+            'outbound_calls': 0,
+            'connected': 0,  # Outbound calls >= 1 min (for connection rate)
+            'conversations': 0,  # All calls (inbound + outbound) >= 2 min
+            'talk_time_min': 0,
+            'long_call_durations': [],  # Track durations for calls >= 2 min to calculate average
+            'outbound_call_details': [],  # For multi-dial sequence analysis
+            'unique_leads_dialed': set(),  # Track unique personIds for leads dialed
+            'unique_leads_connected': set(),  # Track unique personIds for conversations (2+ min)
+            'single_dial_calls': 0,
+            'double_dial_sequences': 0,
+            'triple_dial_sequences': 0,
+            'multi_dial_calls': 0,  # Total calls that are part of any 2x+ sequence
         }
 
     # Group calls by userId and calculate metrics
     # FUB definitions (from https://help.followupboss.com/hc/en-us/articles/360014186693-Call-Reporting):
     # - Calls Made = Outgoing calls only (isIncoming=False)
     # - Connected = Calls with duration >= 60 seconds (1 minute)
-    # - Conversations = Outgoing calls with duration >= 120 seconds (2 minutes)
+    # - Conversations = ANY call (inbound or outbound) with duration >= 120 seconds (2 minutes)
     # - Talk Time = Total duration of all calls
+    # Custom metric:
+    # - Connection Rate = Connected / Outbound Calls (measures how often outbound calls reach someone)
     for call in all_calls:
         call_user_id = call.get('userId')
         call_user_name = call.get('userName')
@@ -260,17 +276,38 @@ def query_call_metrics(start_date: datetime, end_date: datetime, user_ids: Dict[
             agent_name = call_user_name
 
         if agent_name and agent_name in call_metrics:
-            # Only count outgoing calls as "Calls Made"
+            # Only count outgoing calls as "Outbound Calls"
             if is_outgoing:
-                call_metrics[agent_name]['calls'] += 1
+                call_metrics[agent_name]['outbound_calls'] += 1
 
-            # Connected = duration >= 60 seconds (1 minute)
-            if duration >= 60:
-                call_metrics[agent_name]['connected'] += 1
+                # Connected = outbound calls >= 1 min (used for connection rate)
+                if duration >= 60:
+                    call_metrics[agent_name]['connected'] += 1
 
-            # Conversations = outgoing calls with duration >= 120 seconds (2 minutes)
-            if is_outgoing and duration >= 120:
+                # Collect call details for multi-dial sequence analysis
+                to_number = call.get('toNumber')
+                created = call.get('created')
+                if to_number and created:
+                    call_metrics[agent_name]['outbound_call_details'].append({
+                        'to_number': to_number,
+                        'created': created,
+                    })
+
+                # Track unique leads dialed (by personId)
+                person_id = call.get('personId')
+                if person_id:
+                    call_metrics[agent_name]['unique_leads_dialed'].add(person_id)
+
+            # Conversations = ANY call (inbound or outbound) >= 2 min
+            # This matches FUB's definition: "Calls lasting 2 minutes or more"
+            if duration >= 120:
                 call_metrics[agent_name]['conversations'] += 1
+                # Track durations for average calculation
+                call_metrics[agent_name]['long_call_durations'].append(duration)
+                # Track unique leads with conversations
+                person_id = call.get('personId')
+                if person_id:
+                    call_metrics[agent_name]['unique_leads_connected'].add(person_id)
 
             # Talk time includes all calls with duration
             if duration > 0:
@@ -279,6 +316,65 @@ def query_call_metrics(start_date: datetime, end_date: datetime, user_ids: Dict[
     # Convert total duration from seconds to minutes
     for agent_name in call_metrics:
         call_metrics[agent_name]['talk_time_min'] = call_metrics[agent_name]['talk_time_min'] // 60
+
+    # Analyze multi-dial sequences for each agent
+    # A sequence is consecutive calls to the same number with <= 2 min between each call
+    for agent_name in call_metrics:
+        calls = call_metrics[agent_name]['outbound_call_details']
+        if not calls:
+            # No calls - convert sets to counts and set defaults
+            call_metrics[agent_name]['unique_leads_dialed'] = len(call_metrics[agent_name]['unique_leads_dialed'])
+            call_metrics[agent_name]['unique_leads_connected'] = len(call_metrics[agent_name]['unique_leads_connected'])
+            call_metrics[agent_name]['single_dial_calls'] = 0
+            del call_metrics[agent_name]['outbound_call_details']
+            continue
+
+        # Sort calls by timestamp
+        calls.sort(key=lambda x: x['created'])
+
+        total_multi_dial_calls = 0
+        double_sequences = 0
+        triple_sequences = 0
+
+        i = 0
+        while i < len(calls):
+            current_number = calls[i]['to_number']
+            sequence_length = 1
+
+            j = i + 1
+            while j < len(calls):
+                # Parse timestamps and check time difference
+                prev_time = datetime.fromisoformat(calls[j-1]['created'].replace('Z', '+00:00'))
+                curr_time = datetime.fromisoformat(calls[j]['created'].replace('Z', '+00:00'))
+                time_diff = (curr_time - prev_time).total_seconds()
+
+                # Same number and within 2 minutes of previous call = part of sequence
+                if calls[j]['to_number'] == current_number and time_diff <= 120:
+                    sequence_length += 1
+                    j += 1
+                else:
+                    break
+
+            # Count the sequence
+            if sequence_length >= 3:
+                triple_sequences += 1
+                total_multi_dial_calls += sequence_length
+            elif sequence_length == 2:
+                double_sequences += 1
+                total_multi_dial_calls += sequence_length
+
+            # Move to next unprocessed call
+            i = j if j > i + 1 else i + 1
+
+        call_metrics[agent_name]['double_dial_sequences'] = double_sequences
+        call_metrics[agent_name]['triple_dial_sequences'] = triple_sequences
+        call_metrics[agent_name]['multi_dial_calls'] = total_multi_dial_calls
+        call_metrics[agent_name]['single_dial_calls'] = call_metrics[agent_name]['outbound_calls'] - total_multi_dial_calls
+
+        # Convert unique leads sets to counts and clean up raw data
+        call_metrics[agent_name]['unique_leads_dialed'] = len(call_metrics[agent_name]['unique_leads_dialed'])
+        call_metrics[agent_name]['unique_leads_connected'] = len(call_metrics[agent_name]['unique_leads_connected'])
+        del call_metrics[agent_name]['outbound_call_details']
 
     return call_metrics
 
@@ -297,10 +393,6 @@ def write_to_google_sheets(
         print("ERROR: GOOGLE_SHEETS_CREDENTIALS not set")
         sys.exit(1)
 
-    if not GOOGLE_SHEET_ID:
-        print("ERROR: GOOGLE_SHEET_ID not set")
-        sys.exit(1)
-
     # Parse credentials from JSON string
     creds_dict = json.loads(GOOGLE_SHEETS_CREDENTIALS)
 
@@ -313,7 +405,7 @@ def write_to_google_sheets(
     client = gspread.authorize(credentials)
 
     # Open the spreadsheet
-    spreadsheet = client.open_by_key(GOOGLE_SHEET_ID)
+    spreadsheet = client.open_by_key(WEEKLY_AGENT_SHEET_ID)
 
     # Create tab name with date range
     tab_name = f"Week {start_date.strftime('%m/%d')} - {end_date.strftime('%m/%d/%Y')}"
@@ -333,10 +425,16 @@ def write_to_google_sheets(
         "Contracts Sent",
         "Under Contract",
         "Closed",
-        "Total Calls",
-        "Connected",
-        "Conversations",
-        "Talk Time (min)"
+        "Outbound Calls",
+        "Unique Leads Dialed",
+        "Unique Leads Connected",
+        "Conversations (2+ min)",
+        "Connection Rate",
+        "Talk Time (min)",
+        "Avg Call (min)",
+        "Single Dial",
+        "2x Sequences",
+        "3x Sequences",
     ]
 
     # Prepare data rows
@@ -353,12 +451,22 @@ def write_to_google_sheets(
         closed = stage_data.get("Closed", 0) + stage_data.get("ACQ - Closed Won", 0)
 
         call_data = call_metrics.get(agent, {})
-        calls = call_data.get('calls', 0)
+        outbound_calls = call_data.get('outbound_calls', 0)
+        unique_leads = call_data.get('unique_leads_dialed', 0)
+        unique_leads_connected = call_data.get('unique_leads_connected', 0)
         connected = call_data.get('connected', 0)
         conversations = call_data.get('conversations', 0)
+        long_call_durations = call_data.get('long_call_durations', [])
+        avg_call_min = round(sum(long_call_durations) / len(long_call_durations) / 60, 1) if long_call_durations else 0
         talk_time = call_data.get('talk_time_min', 0)
+        # Connection Rate = Connected (1+ min) / Outbound Calls
+        connection_rate = f"{round(connected / outbound_calls * 100)}%" if outbound_calls > 0 else "0%"
+        # Multi-dial metrics
+        single_dial = call_data.get('single_dial_calls', 0)
+        double_sequences = call_data.get('double_dial_sequences', 0)
+        triple_sequences = call_data.get('triple_dial_sequences', 0)
 
-        rows.append([agent, offers, contracts, under_contract, closed, calls, connected, conversations, talk_time])
+        rows.append([agent, offers, contracts, under_contract, closed, outbound_calls, unique_leads, unique_leads_connected, conversations, connection_rate, talk_time, avg_call_min, single_dial, double_sequences, triple_sequences])
 
     # Add unassigned row at the end if it exists
     if 'Unassigned' in stage_metrics:
@@ -367,7 +475,7 @@ def write_to_google_sheets(
         contracts = stage_data.get("ACQ - Contract Sent", 0)
         under_contract = stage_data.get("ACQ - Under Contract", 0)
         closed = stage_data.get("Closed", 0) + stage_data.get("ACQ - Closed Won", 0)
-        rows.append(["Unassigned", offers, contracts, under_contract, closed, 0, 0, 0, 0])
+        rows.append(["Unassigned", offers, contracts, under_contract, closed, 0, 0, 0, 0, "0%", 0, 0, 0, 0, 0])
 
     # Add report metadata at the bottom
     rows.append([])
@@ -378,9 +486,9 @@ def write_to_google_sheets(
     worksheet.update(rows, 'A1')
 
     # Format header row (bold)
-    worksheet.format('A1:I1', {'textFormat': {'bold': True}})
+    worksheet.format('A1:O1', {'textFormat': {'bold': True}})
 
-    return f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEET_ID}/edit#gid={worksheet.id}"
+    return f"https://docs.google.com/spreadsheets/d/{WEEKLY_AGENT_SHEET_ID}/edit#gid={worksheet.id}"
 
 
 def main():
@@ -446,8 +554,9 @@ def main():
         print(f"Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
         print("=" * 100)
 
-        print(f"\n{'Agent':<20} {'Offers':<7} {'Contracts':<10} {'Under K':<8} {'Closed':<7} {'Calls':<7} {'Connect':<8} {'Convos':<7} {'Talk(m)':<8}")
-        print("-" * 92)
+        # Print header rows (split into two lines for readability)
+        print(f"\n{'Agent':<25} {'Offers':<7} {'Contracts':<10} {'Under K':<8} {'Closed':<7} {'Outbound':<9} {'Leads':<7} {'Connected':<10} {'Convos':<7} {'ConnRate':<9} {'Talk(m)':<8} {'Avg(m)':<7} {'Single':<7} {'2x':<4} {'3x':<4}")
+        print("-" * 140)
 
         all_agents = set(stage_metrics.keys()) | set(call_metrics.keys())
         for agent in sorted(all_agents):
@@ -458,12 +567,22 @@ def main():
             closed = stage_data.get("Closed", 0) + stage_data.get("ACQ - Closed Won", 0)
 
             call_data = call_metrics.get(agent, {})
-            calls = call_data.get('calls', 0)
+            outbound_calls = call_data.get('outbound_calls', 0)
+            unique_leads = call_data.get('unique_leads_dialed', 0)
+            unique_connected = call_data.get('unique_leads_connected', 0)
             connected = call_data.get('connected', 0)
             conversations = call_data.get('conversations', 0)
+            long_call_durations = call_data.get('long_call_durations', [])
+            avg_call_min = round(sum(long_call_durations) / len(long_call_durations) / 60, 1) if long_call_durations else 0
             talk_time = call_data.get('talk_time_min', 0)
+            connection_rate = f"{round(connected / outbound_calls * 100)}%" if outbound_calls > 0 else "0%"
+            single_dial = call_data.get('single_dial_calls', 0)
+            double_seq = call_data.get('double_dial_sequences', 0)
+            triple_seq = call_data.get('triple_dial_sequences', 0)
 
-            print(f"{agent:<20} {offers:<7} {contracts:<10} {under_contract:<8} {closed:<7} {calls:<7} {connected:<8} {conversations:<7} {talk_time:<8}")
+            # Truncate long agent names for display
+            display_name = agent[:24] if len(agent) > 24 else agent
+            print(f"{display_name:<25} {offers:<7} {contracts:<10} {under_contract:<8} {closed:<7} {outbound_calls:<9} {unique_leads:<7} {unique_connected:<10} {conversations:<7} {connection_rate:<9} {talk_time:<8} {avg_call_min:<7} {single_dial:<7} {double_seq:<4} {triple_seq:<4}")
 
     if args.dry_run:
         # Dry run - print to console only
