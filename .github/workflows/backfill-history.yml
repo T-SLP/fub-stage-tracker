@@ -1,13 +1,27 @@
-name: Backfill History
+name: Backfill History & Analysis Export
 
 on:
   # Manual trigger only
   workflow_dispatch:
     inputs:
-      days:
-        description: 'Number of days to backfill'
+      mode:
+        description: 'What to generate'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - history-only
+          - analysis-only
+      history_days:
+        description: 'Number of days for History tab'
         required: false
         default: '60'
+        type: string
+      analysis_days:
+        description: 'Number of days for Analysis Export tab'
+        required: false
+        default: '90'
         type: string
 
 jobs:
@@ -33,4 +47,14 @@ jobs:
           FUB_API_KEY: ${{ secrets.FUB_API_KEY }}
           GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
         run: |
-          python reports/backfill_history.py --days ${{ github.event.inputs.days }}
+          MODE="${{ github.event.inputs.mode }}"
+          HISTORY_DAYS="${{ github.event.inputs.history_days }}"
+          ANALYSIS_DAYS="${{ github.event.inputs.analysis_days }}"
+
+          if [ "$MODE" = "history-only" ]; then
+            python reports/backfill_history.py --days "$HISTORY_DAYS" --history-only
+          elif [ "$MODE" = "analysis-only" ]; then
+            python reports/backfill_history.py --analysis-days "$ANALYSIS_DAYS" --analysis-only
+          else
+            python reports/backfill_history.py --days "$HISTORY_DAYS" --analysis-days "$ANALYSIS_DAYS"
+          fi

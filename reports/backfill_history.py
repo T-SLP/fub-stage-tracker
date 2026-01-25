@@ -415,15 +415,145 @@ def backfill_history(days_back=60):
     # Write headers + data (most recent at top)
     history_data = [history_headers] + all_history_rows
     history_ws.update(range_name='A1', values=history_data)
+    history_ws.format('A1:P1', {'textFormat': {'bold': True}})
 
     print(f"Successfully wrote {len(all_history_rows)} rows to History tab")
     print("Done!")
 
 
+def generate_analysis_export(days_back=90):
+    """Generate Analysis Export tab with data optimized for correlation analysis."""
+    print(f"Generating Analysis Export tab with {days_back} days of data...")
+
+    # Get weeks to process
+    weeks = get_weeks_in_range(days_back)
+    print(f"Found {len(weeks)} complete weeks to process")
+
+    if not weeks:
+        print("No complete weeks to process")
+        return
+
+    # Get FUB users
+    user_ids = get_fub_users()
+    print(f"Found {len(user_ids)} FUB users")
+
+    # Analysis Export headers - same as History but with numeric-friendly column names
+    # Percentages will be stored as numbers (e.g., 23 instead of "23%") for easier analysis
+    analysis_headers = [
+        "Week Starting",
+        "Agent",
+        # KPIs
+        "Talk Time (min)",
+        "Offers Made",
+        "Contracts Sent",
+        # Metrics
+        "Outbound Calls",
+        "Connections (2+ min)",
+        "Connection Rate (%)",  # Numeric percentage
+        "Unique Leads Dialed",
+        "Unique Leads Connected",
+        "Unique Lead Connection Rate (%)",  # Numeric percentage
+        "Avg Call (min)",
+        "Single Dial",
+        "2x Dial",
+        "3x Dial",
+        "Signed Contracts",
+    ]
+
+    all_analysis_rows = []
+
+    # Process each week
+    for week_start, week_end in weeks:
+        print(f"  Processing week: {week_start} to {week_end}")
+
+        # Query metrics for this week
+        stage_metrics = query_stage_metrics(week_start, week_end)
+        call_metrics = query_call_metrics(week_start, week_end, user_ids)
+
+        week_label = week_start.strftime('%Y-%m-%d')
+
+        # Build rows for each agent
+        for agent in INCLUDED_AGENTS:
+            stage_data = stage_metrics.get(agent, {})
+            offers = stage_data.get("ACQ - Offers Made", 0)
+            contracts_sent = stage_data.get("ACQ - Contract Sent", 0)
+            signed_contracts = stage_data.get("ACQ - Under Contract", 0)
+
+            call_data = call_metrics.get(agent, {})
+            outbound_calls = call_data.get('outbound_calls', 0)
+            unique_leads = call_data.get('unique_leads_dialed', 0)
+            unique_leads_connected = call_data.get('unique_leads_connected', 0)
+            connections = call_data.get('conversations', 0)
+            long_call_durations = call_data.get('long_call_durations', [])
+            avg_call_min = round(sum(long_call_durations) / len(long_call_durations) / 60, 1) if long_call_durations else 0
+            talk_time = call_data.get('talk_time_min', 0)
+
+            # Store percentages as numbers for correlation analysis
+            connection_rate = round(connections / outbound_calls * 100, 1) if outbound_calls > 0 else 0
+            unique_lead_conn_rate = round(unique_leads_connected / unique_leads * 100, 1) if unique_leads > 0 else 0
+
+            single_dial = call_data.get('single_dial', 0)
+            double_dial = call_data.get('double_dial', 0)
+            triple_dial = call_data.get('triple_dial', 0)
+
+            analysis_row = [
+                week_label, agent, talk_time, offers, contracts_sent,
+                outbound_calls, connections, connection_rate,
+                unique_leads, unique_leads_connected, unique_lead_conn_rate,
+                avg_call_min, single_dial, double_dial, triple_dial, signed_contracts
+            ]
+            all_analysis_rows.append(analysis_row)
+
+    # Sort by week (oldest first for time series analysis), then by agent
+    all_analysis_rows.sort(key=lambda x: (x[0], x[1]))
+
+    # Connect to Google Sheets
+    print("Connecting to Google Sheets...")
+    if not GOOGLE_SHEETS_CREDENTIALS:
+        print("ERROR: GOOGLE_SHEETS_CREDENTIALS not set")
+        return
+
+    creds_dict = json.loads(GOOGLE_SHEETS_CREDENTIALS)
+    scopes = [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive'
+    ]
+    credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    gc = gspread.authorize(credentials)
+
+    spreadsheet = gc.open_by_key(WEEKLY_AGENT_SHEET_ID)
+    existing_tabs = [ws.title for ws in spreadsheet.worksheets()]
+
+    # Write to Analysis Export tab
+    print("Writing to 'Analysis Export' tab...")
+    if "Analysis Export" in existing_tabs:
+        analysis_ws = spreadsheet.worksheet("Analysis Export")
+        analysis_ws.clear()
+    else:
+        analysis_ws = spreadsheet.add_worksheet(title="Analysis Export", rows=500, cols=20)
+
+    # Write headers + data
+    analysis_data = [analysis_headers] + all_analysis_rows
+    analysis_ws.update(range_name='A1', values=analysis_data)
+    analysis_ws.format('A1:P1', {'textFormat': {'bold': True}})
+
+    print(f"Successfully wrote {len(all_analysis_rows)} rows to Analysis Export tab")
+    print("Done!")
+
+
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description='Backfill History tab with historical data')
-    parser.add_argument('--days', type=int, default=60, help='Number of days to backfill (default: 60)')
+    parser = argparse.ArgumentParser(description='Backfill History tab and generate Analysis Export')
+    parser.add_argument('--days', type=int, default=60, help='Number of days to backfill History (default: 60)')
+    parser.add_argument('--analysis-days', type=int, default=90, help='Number of days for Analysis Export (default: 90)')
+    parser.add_argument('--history-only', action='store_true', help='Only backfill History tab')
+    parser.add_argument('--analysis-only', action='store_true', help='Only generate Analysis Export tab')
     args = parser.parse_args()
 
-    backfill_history(args.days)
+    if args.analysis_only:
+        generate_analysis_export(args.analysis_days)
+    elif args.history_only:
+        backfill_history(args.days)
+    else:
+        backfill_history(args.days)
+        generate_analysis_export(args.analysis_days)
