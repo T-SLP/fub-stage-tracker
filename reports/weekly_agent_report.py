@@ -438,22 +438,26 @@ def write_to_google_sheets(
     ]
 
     # Prepare header row for History tab (includes week column)
+    # Order matches the Latest tab structure (KPIs first, then Metrics)
     history_headers = [
         "Week Starting",
         "Agent",
+        # KPIs
+        "Talk Time (min)",
         "Offers Made",
         "Contracts Sent",
-        "Signed Contracts",
+        # Metrics
         "Outbound Calls",
-        "Unique Leads Dialed",
-        "Unique Leads Connected",
         "Connections (2+ min)",
         "Connection Rate",
-        "Talk Time (min)",
+        "Unique Leads Dialed",
+        "Unique Leads Connected",
+        "Unique Lead Connection Rate",
         "Avg Call (min)",
         "Single Dial",
-        "2x Sequences",
-        "3x Sequences",
+        "2x Dial",
+        "3x Dial",
+        "Signed Contracts",
     ]
 
     # Collect agent data - filter to included agents only
@@ -468,23 +472,6 @@ def write_to_google_sheets(
 
     week_label = start_date.strftime('%Y-%m-%d')
 
-    # Metric labels for the Latest tab (transposed view)
-    metric_labels = [
-        "Offers Made",
-        "Contracts Sent",
-        "Signed Contracts",
-        "Outbound Calls",
-        "Unique Leads Dialed",
-        "Unique Leads Connected",
-        "Connections (2+ min)",
-        "Connection Rate",
-        "Talk Time (min)",
-        "Avg Call (min)",
-        "Single Dial",
-        "2x Sequences",
-        "3x Sequences",
-    ]
-
     # Collect data for each agent
     agent_data = {}
     history_rows_to_add = []
@@ -492,44 +479,55 @@ def write_to_google_sheets(
     for agent in all_agents:
         stage_data = stage_metrics.get(agent, {})
         offers = stage_data.get("ACQ - Offers Made", 0)
-        contracts = stage_data.get("ACQ - Contract Sent", 0)
-        under_contract = stage_data.get("ACQ - Under Contract", 0)
+        contracts_sent = stage_data.get("ACQ - Contract Sent", 0)
+        signed_contracts = stage_data.get("ACQ - Under Contract", 0)
 
         call_data = call_metrics.get(agent, {})
         outbound_calls = call_data.get('outbound_calls', 0)
         unique_leads = call_data.get('unique_leads_dialed', 0)
         unique_leads_connected = call_data.get('unique_leads_connected', 0)
-        connections = call_data.get('conversations', 0)  # Renamed: calls >= 2 min
+        connections = call_data.get('conversations', 0)  # Calls >= 2 min
         long_call_durations = call_data.get('long_call_durations', [])
         avg_call_min = round(sum(long_call_durations) / len(long_call_durations) / 60, 1) if long_call_durations else 0
         talk_time = call_data.get('talk_time_min', 0)
-        # Connection Rate now uses 2+ min threshold (connections / outbound calls)
+        # Connection Rate uses 2+ min threshold (connections / outbound calls)
         connection_rate = f"{round(connections / outbound_calls * 100)}%" if outbound_calls > 0 else "0%"
-        single_dial_count = call_data.get('single_dial_calls', 0)
-        double_seq_count = call_data.get('double_dial_sequences', 0)
-        triple_seq_count = call_data.get('triple_dial_sequences', 0)
+        # Unique Lead Connection Rate
+        unique_lead_conn_rate = f"{round(unique_leads_connected / unique_leads * 100)}%" if unique_leads > 0 else "0%"
+        single_dial = call_data.get('single_dial_calls', 0)
+        double_dial = call_data.get('double_dial_sequences', 0)
+        triple_dial = call_data.get('triple_dial_sequences', 0)
 
-        # Calculate percentages for dial sequences (as % of outbound calls)
-        # For 2x and 3x, multiply by 2 and 3 respectively to get total calls in sequences
-        double_calls = double_seq_count * 2
-        triple_calls = triple_seq_count * 3
-
-        single_dial = f"{single_dial_count} ({round(single_dial_count / outbound_calls * 100)}%)" if outbound_calls > 0 else "0 (0%)"
-        double_sequences = f"{double_seq_count} ({round(double_calls / outbound_calls * 100)}%)" if outbound_calls > 0 else "0 (0%)"
-        triple_sequences = f"{triple_seq_count} ({round(triple_calls / outbound_calls * 100)}%)" if outbound_calls > 0 else "0 (0%)"
-
-        # Store metrics in order for this agent (matches metric_labels order)
-        agent_data[agent] = [
-            offers, contracts, under_contract, outbound_calls,
-            unique_leads, unique_leads_connected, connections, connection_rate,
-            talk_time, avg_call_min, single_dial, double_sequences, triple_sequences
-        ]
+        # Store all metrics for this agent
+        agent_data[agent] = {
+            # KPIs
+            'talk_time': talk_time,
+            'offers': offers,
+            'contracts_sent': contracts_sent,
+            # Metrics
+            'outbound_calls': outbound_calls,
+            'connections': connections,
+            'connection_rate': connection_rate,
+            'unique_leads': unique_leads,
+            'unique_leads_connected': unique_leads_connected,
+            'unique_lead_conn_rate': unique_lead_conn_rate,
+            'avg_call_min': avg_call_min,
+            'single_dial': single_dial,
+            'double_dial': double_dial,
+            'triple_dial': triple_dial,
+            'signed_contracts': signed_contracts,
+        }
 
         # Row for History tab (with week column)
-        history_row = [week_label, agent, offers, contracts, under_contract, outbound_calls, unique_leads, unique_leads_connected, connections, connection_rate, talk_time, avg_call_min, single_dial, double_sequences, triple_sequences]
+        history_row = [
+            week_label, agent, talk_time, offers, contracts_sent,
+            outbound_calls, connections, connection_rate,
+            unique_leads, unique_leads_connected, unique_lead_conn_rate,
+            avg_call_min, single_dial, double_dial, triple_dial, signed_contracts
+        ]
         history_rows_to_add.append(history_row)
 
-    # === Write to "Latest" tab (transposed: metrics as rows, agents as columns) ===
+    # === Write to "Latest" tab ===
     print("  Writing to 'Latest' tab...")
     if "Latest" in existing_tabs:
         latest_ws = spreadsheet.worksheet("Latest")
@@ -537,31 +535,88 @@ def write_to_google_sheets(
     else:
         latest_ws = spreadsheet.add_worksheet(title="Latest", rows=100, cols=20, index=0)
 
-    # Build transposed data: first column is metric name, then one column per agent
+    # Build the Latest tab with exact formatting from user's template
     latest_rows = []
 
-    # Header row: "Metric" followed by agent names
-    header_row = ["Metric"] + list(all_agents)
+    # Row 1: Empty cell, then agent names
+    header_row = [""] + list(all_agents)
     latest_rows.append(header_row)
 
-    # One row per metric
-    for i, metric_label in enumerate(metric_labels):
-        row = [metric_label]
-        for agent in all_agents:
-            row.append(agent_data[agent][i])
+    # Row 2: "KPIs" section header
+    latest_rows.append(["KPIs"])
+
+    # KPI rows
+    kpi_metrics = [
+        ("Talk Time (min)", 'talk_time'),
+        ("Offers Made", 'offers'),
+        ("Contracts Sent", 'contracts_sent'),
+    ]
+    for label, key in kpi_metrics:
+        row = [label] + [agent_data[agent][key] for agent in all_agents]
         latest_rows.append(row)
 
-    # Add metadata
-    latest_rows.append([])
+    # Empty row between sections
+    latest_rows.append([""])
+
+    # Row 7: "Metrics" section header
+    latest_rows.append(["Metrics"])
+
+    # Metrics rows
+    metric_items = [
+        ("Outbound Calls", 'outbound_calls'),
+        ("Connections (2+ min)", 'connections'),
+        ("Connection Rate", 'connection_rate'),
+        ("Unique Leads Dialed", 'unique_leads'),
+        ("Unique Leads Connected", 'unique_leads_connected'),
+        ("Unique Lead Connection Rate", 'unique_lead_conn_rate'),
+        ("Avg Call (min)", 'avg_call_min'),
+        ("Single Dial", 'single_dial'),
+        ("2x Dial", 'double_dial'),
+        ("3x Dial", 'triple_dial'),
+        ("Signed Contracts", 'signed_contracts'),
+    ]
+    for label, key in metric_items:
+        row = [label] + [agent_data[agent][key] for agent in all_agents]
+        latest_rows.append(row)
+
+    # Empty row before metadata
+    latest_rows.append([""])
+
+    # Metadata rows
     latest_rows.append(["Report Generated:", datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')])
     latest_rows.append(["Date Range:", f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"])
 
     latest_ws.update(latest_rows, 'A1')
 
-    # Format: bold first row and first column
+    # Apply formatting to match user's template
     num_agents = len(all_agents)
-    latest_ws.format(f'A1:{chr(65 + num_agents)}1', {'textFormat': {'bold': True}})
-    latest_ws.format('A1:A20', {'textFormat': {'bold': True}})
+    last_col = chr(65 + num_agents)  # B for 1 agent, C for 2 agents, etc.
+
+    # Row 1: Agent names - bold and centered
+    latest_ws.format(f'B1:{last_col}1', {
+        'textFormat': {'bold': True},
+        'horizontalAlignment': 'CENTER'
+    })
+
+    # Row 2: "KPIs" - bold
+    latest_ws.format('A2', {'textFormat': {'bold': True}})
+
+    # Row 6: Empty row (no formatting needed)
+
+    # Row 7: "Metrics" - bold
+    latest_ws.format('A7', {'textFormat': {'bold': True}})
+
+    # Metric labels (column A, rows 3-5 and 8-18): right-aligned
+    latest_ws.format('A3:A5', {'horizontalAlignment': 'RIGHT'})
+    latest_ws.format('A8:A18', {'horizontalAlignment': 'RIGHT'})
+
+    # All values (columns B onwards): centered
+    latest_ws.format(f'B3:{last_col}5', {'horizontalAlignment': 'CENTER'})
+    latest_ws.format(f'B8:{last_col}18', {'horizontalAlignment': 'CENTER'})
+
+    # Metadata rows: "Report Generated:" and "Date Range:" bold
+    latest_ws.format('A20', {'textFormat': {'bold': True}})
+    latest_ws.format('A21', {'textFormat': {'bold': True}})
 
     # === Write to "History" tab ===
     print("  Writing to 'History' tab...")
