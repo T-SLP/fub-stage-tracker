@@ -51,10 +51,19 @@ This table captures all stage transitions from Follow Up Boss.
 - `first_name`, `last_name` - Lead name
 - `parcel_county`, `parcel_state` - Property location
 
-**Important Note:** The `assigned_user_name` column wasn't populated before December 19, 2025. For older records, queries must fall back to `raw_payload->>'assignedTo'`:
+**Important Note:** The `assigned_user_name` column wasn't populated before December 19, 2025. For older records, queries use the following fallback logic:
+
+1. First try `assigned_user_name`
+2. Then try `raw_payload->>'assignedTo'`
+3. For records before Dec 19, 2025 with no agent info, default to "Madeleine Penales" (she was the only acquisition agent at that time)
+4. Otherwise "Unassigned"
 
 ```sql
-COALESCE(assigned_user_name, raw_payload->>'assignedTo', 'Unassigned') as agent
+COALESCE(
+    assigned_user_name,
+    raw_payload->>'assignedTo',
+    CASE WHEN changed_at < '2025-12-19' THEN 'Madeleine Penales' ELSE 'Unassigned' END
+) as agent
 ```
 
 ### Tracked Stages

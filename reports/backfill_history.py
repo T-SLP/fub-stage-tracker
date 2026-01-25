@@ -124,17 +124,27 @@ def query_stage_metrics(start_date, end_date):
         end_dt = datetime.combine(end_date, datetime.max.time()).replace(tzinfo=EASTERN_TZ)
 
         # Use COALESCE to fall back to raw_payload->>'assignedTo' for older records
-        # where assigned_user_name wasn't populated
+        # where assigned_user_name wasn't populated.
+        # For records before Dec 19, 2025 with no agent info, default to Madeleine Penales
+        # (she was the only acquisition agent at that time)
         cursor.execute("""
             SELECT
-                COALESCE(assigned_user_name, raw_payload->>'assignedTo', 'Unassigned') as agent,
+                COALESCE(
+                    assigned_user_name,
+                    raw_payload->>'assignedTo',
+                    CASE WHEN changed_at < '2025-12-19' THEN 'Madeleine Penales' ELSE 'Unassigned' END
+                ) as agent,
                 stage_to,
                 COUNT(*) as count
             FROM stage_changes
             WHERE changed_at >= %s
               AND changed_at < %s
               AND stage_to IN %s
-            GROUP BY COALESCE(assigned_user_name, raw_payload->>'assignedTo', 'Unassigned'), stage_to
+            GROUP BY COALESCE(
+                assigned_user_name,
+                raw_payload->>'assignedTo',
+                CASE WHEN changed_at < '2025-12-19' THEN 'Madeleine Penales' ELSE 'Unassigned' END
+            ), stage_to
         """, (start_dt, end_dt, tuple(TRACKED_STAGES)))
 
         results = {}
