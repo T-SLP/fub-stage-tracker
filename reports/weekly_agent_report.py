@@ -386,8 +386,11 @@ def write_to_google_sheets(
     end_date: datetime
 ) -> str:
     """
-    Write the report to Google Sheets as a new tab.
-    Returns the URL to the new sheet.
+    Write the report to Google Sheets with two tabs:
+    - "Latest" tab: Current week's full report (overwritten each run)
+    - "History" tab: Appends summary row per agent (most recent at top)
+
+    Returns the URL to the spreadsheet.
     """
     if not GOOGLE_SHEETS_CREDENTIALS:
         print("ERROR: GOOGLE_SHEETS_CREDENTIALS not set")
@@ -406,20 +409,10 @@ def write_to_google_sheets(
 
     # Open the spreadsheet
     spreadsheet = client.open_by_key(WEEKLY_AGENT_SHEET_ID)
-
-    # Create tab name with date range
-    tab_name = f"Week {start_date.strftime('%m/%d')} - {end_date.strftime('%m/%d/%Y')}"
-
-    # Check if tab already exists, if so add a timestamp
     existing_tabs = [ws.title for ws in spreadsheet.worksheets()]
-    if tab_name in existing_tabs:
-        tab_name = f"{tab_name} ({datetime.now(timezone.utc).strftime('%H%M')})"
 
-    # Create new worksheet at the leftmost position (most recent first)
-    worksheet = spreadsheet.add_worksheet(title=tab_name, rows=100, cols=15, index=0)
-
-    # Prepare header row
-    headers = [
+    # Prepare header row for Latest tab
+    latest_headers = [
         "Agent",
         "Offers Made",
         "Contracts Sent",
@@ -437,11 +430,32 @@ def write_to_google_sheets(
         "3x Sequences",
     ]
 
-    # Prepare data rows
-    all_agents = set(stage_metrics.keys()) | set(call_metrics.keys())
-    all_agents.discard('Unassigned')  # Put unassigned at end if it exists
+    # Prepare header row for History tab (includes week column)
+    history_headers = [
+        "Week Starting",
+        "Agent",
+        "Offers Made",
+        "Contracts Sent",
+        "Under Contract",
+        "Closed",
+        "Outbound Calls",
+        "Unique Leads Dialed",
+        "Unique Leads Connected",
+        "Conversations (2+ min)",
+        "Connection Rate",
+        "Talk Time (min)",
+        "Avg Call (min)",
+        "Single Dial",
+        "2x Sequences",
+        "3x Sequences",
+    ]
 
-    rows = [headers]
+    # Collect agent data
+    all_agents = set(stage_metrics.keys()) | set(call_metrics.keys())
+    all_agents.discard('Unassigned')
+
+    agent_rows = []
+    week_label = start_date.strftime('%Y-%m-%d')
 
     for agent in sorted(all_agents):
         stage_data = stage_metrics.get(agent, {})
@@ -459,36 +473,76 @@ def write_to_google_sheets(
         long_call_durations = call_data.get('long_call_durations', [])
         avg_call_min = round(sum(long_call_durations) / len(long_call_durations) / 60, 1) if long_call_durations else 0
         talk_time = call_data.get('talk_time_min', 0)
-        # Connection Rate = Connected (1+ min) / Outbound Calls
         connection_rate = f"{round(connected / outbound_calls * 100)}%" if outbound_calls > 0 else "0%"
-        # Multi-dial metrics
         single_dial = call_data.get('single_dial_calls', 0)
         double_sequences = call_data.get('double_dial_sequences', 0)
         triple_sequences = call_data.get('triple_dial_sequences', 0)
 
-        rows.append([agent, offers, contracts, under_contract, closed, outbound_calls, unique_leads, unique_leads_connected, conversations, connection_rate, talk_time, avg_call_min, single_dial, double_sequences, triple_sequences])
+        # Row for Latest tab (no week column)
+        latest_row = [agent, offers, contracts, under_contract, closed, outbound_calls, unique_leads, unique_leads_connected, conversations, connection_rate, talk_time, avg_call_min, single_dial, double_sequences, triple_sequences]
 
-    # Add unassigned row at the end if it exists
+        # Row for History tab (with week column)
+        history_row = [week_label, agent, offers, contracts, under_contract, closed, outbound_calls, unique_leads, unique_leads_connected, conversations, connection_rate, talk_time, avg_call_min, single_dial, double_sequences, triple_sequences]
+
+        agent_rows.append({'latest': latest_row, 'history': history_row})
+
+    # === Write to "Latest" tab ===
+    print("  Writing to 'Latest' tab...")
+    if "Latest" in existing_tabs:
+        latest_ws = spreadsheet.worksheet("Latest")
+        latest_ws.clear()
+    else:
+        latest_ws = spreadsheet.add_worksheet(title="Latest", rows=100, cols=20, index=0)
+
+    latest_rows = [latest_headers]
+    for row_data in agent_rows:
+        latest_rows.append(row_data['latest'])
+
+    # Add unassigned row if exists
     if 'Unassigned' in stage_metrics:
         stage_data = stage_metrics['Unassigned']
         offers = stage_data.get("ACQ - Offers Made", 0)
         contracts = stage_data.get("ACQ - Contract Sent", 0)
         under_contract = stage_data.get("ACQ - Under Contract", 0)
         closed = stage_data.get("Closed", 0) + stage_data.get("ACQ - Closed Won", 0)
-        rows.append(["Unassigned", offers, contracts, under_contract, closed, 0, 0, 0, 0, "0%", 0, 0, 0, 0, 0])
+        latest_rows.append(["Unassigned", offers, contracts, under_contract, closed, 0, 0, 0, 0, "0%", 0, 0, 0, 0, 0])
 
-    # Add report metadata at the bottom
-    rows.append([])
-    rows.append(["Report Generated:", datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')])
-    rows.append(["Date Range:", f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"])
+    # Add metadata
+    latest_rows.append([])
+    latest_rows.append(["Report Generated:", datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')])
+    latest_rows.append(["Date Range:", f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"])
 
-    # Write all data
-    worksheet.update(rows, 'A1')
+    latest_ws.update(latest_rows, 'A1')
+    latest_ws.format('A1:O1', {'textFormat': {'bold': True}})
 
-    # Format header row (bold)
-    worksheet.format('A1:O1', {'textFormat': {'bold': True}})
+    # === Write to "History" tab ===
+    print("  Writing to 'History' tab...")
+    if "History" in existing_tabs:
+        history_ws = spreadsheet.worksheet("History")
+        # Check if this week's data already exists (avoid duplicates)
+        existing_data = history_ws.get_all_values()
+        if existing_data and len(existing_data) > 1:
+            # Check if this week is already in the history
+            existing_weeks = [row[0] for row in existing_data[1:]]  # Skip header
+            if week_label in existing_weeks:
+                print(f"  Week {week_label} already exists in History, skipping...")
+            else:
+                # Insert new rows at row 2 (after header)
+                new_rows = [row_data['history'] for row_data in agent_rows]
+                history_ws.insert_rows(new_rows, row=2)
+        else:
+            # Empty sheet, just add header and data
+            history_rows = [history_headers] + [row_data['history'] for row_data in agent_rows]
+            history_ws.update(history_rows, 'A1')
+            history_ws.format('A1:P1', {'textFormat': {'bold': True}})
+    else:
+        # Create new History tab
+        history_ws = spreadsheet.add_worksheet(title="History", rows=1000, cols=20, index=1)
+        history_rows = [history_headers] + [row_data['history'] for row_data in agent_rows]
+        history_ws.update(history_rows, 'A1')
+        history_ws.format('A1:P1', {'textFormat': {'bold': True}})
 
-    return f"https://docs.google.com/spreadsheets/d/{WEEKLY_AGENT_SHEET_ID}/edit#gid={worksheet.id}"
+    return f"https://docs.google.com/spreadsheets/d/{WEEKLY_AGENT_SHEET_ID}/edit"
 
 
 def main():
