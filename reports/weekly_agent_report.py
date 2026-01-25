@@ -444,11 +444,10 @@ def write_to_google_sheets(
         "Offers Made",
         "Contracts Sent",
         "Under Contract",
-        "Closed",
         "Outbound Calls",
         "Unique Leads Dialed",
         "Unique Leads Connected",
-        "Conversations (2+ min)",
+        "Connections (2+ min)",
         "Connection Rate",
         "Talk Time (min)",
         "Avg Call (min)",
@@ -474,11 +473,10 @@ def write_to_google_sheets(
         "Offers Made",
         "Contracts Sent",
         "Under Contract",
-        "Closed",
         "Outbound Calls",
         "Unique Leads Dialed",
         "Unique Leads Connected",
-        "Conversations (2+ min)",
+        "Connections (2+ min)",
         "Connection Rate",
         "Talk Time (min)",
         "Avg Call (min)",
@@ -496,31 +494,30 @@ def write_to_google_sheets(
         offers = stage_data.get("ACQ - Offers Made", 0)
         contracts = stage_data.get("ACQ - Contract Sent", 0)
         under_contract = stage_data.get("ACQ - Under Contract", 0)
-        closed = stage_data.get("Closed", 0) + stage_data.get("ACQ - Closed Won", 0)
 
         call_data = call_metrics.get(agent, {})
         outbound_calls = call_data.get('outbound_calls', 0)
         unique_leads = call_data.get('unique_leads_dialed', 0)
         unique_leads_connected = call_data.get('unique_leads_connected', 0)
-        connected = call_data.get('connected', 0)
-        conversations = call_data.get('conversations', 0)
+        connections = call_data.get('conversations', 0)  # Renamed: calls >= 2 min
         long_call_durations = call_data.get('long_call_durations', [])
         avg_call_min = round(sum(long_call_durations) / len(long_call_durations) / 60, 1) if long_call_durations else 0
         talk_time = call_data.get('talk_time_min', 0)
-        connection_rate = f"{round(connected / outbound_calls * 100)}%" if outbound_calls > 0 else "0%"
+        # Connection Rate now uses 2+ min threshold (connections / outbound calls)
+        connection_rate = f"{round(connections / outbound_calls * 100)}%" if outbound_calls > 0 else "0%"
         single_dial = call_data.get('single_dial_calls', 0)
         double_sequences = call_data.get('double_dial_sequences', 0)
         triple_sequences = call_data.get('triple_dial_sequences', 0)
 
-        # Store metrics in order for this agent
+        # Store metrics in order for this agent (matches metric_labels order)
         agent_data[agent] = [
-            offers, contracts, under_contract, closed, outbound_calls,
-            unique_leads, unique_leads_connected, conversations, connection_rate,
+            offers, contracts, under_contract, outbound_calls,
+            unique_leads, unique_leads_connected, connections, connection_rate,
             talk_time, avg_call_min, single_dial, double_sequences, triple_sequences
         ]
 
         # Row for History tab (with week column)
-        history_row = [week_label, agent, offers, contracts, under_contract, closed, outbound_calls, unique_leads, unique_leads_connected, conversations, connection_rate, talk_time, avg_call_min, single_dial, double_sequences, triple_sequences]
+        history_row = [week_label, agent, offers, contracts, under_contract, outbound_calls, unique_leads, unique_leads_connected, connections, connection_rate, talk_time, avg_call_min, single_dial, double_sequences, triple_sequences]
         history_rows_to_add.append(history_row)
 
     # === Write to "Latest" tab (transposed: metrics as rows, agents as columns) ===
