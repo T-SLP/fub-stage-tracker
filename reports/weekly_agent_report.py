@@ -443,7 +443,7 @@ def write_to_google_sheets(
         "Agent",
         "Offers Made",
         "Contracts Sent",
-        "Under Contract",
+        "Signed Contracts",
         "Outbound Calls",
         "Unique Leads Dialed",
         "Unique Leads Connected",
@@ -472,7 +472,7 @@ def write_to_google_sheets(
     metric_labels = [
         "Offers Made",
         "Contracts Sent",
-        "Under Contract",
+        "Signed Contracts",
         "Outbound Calls",
         "Unique Leads Dialed",
         "Unique Leads Connected",
@@ -505,9 +505,18 @@ def write_to_google_sheets(
         talk_time = call_data.get('talk_time_min', 0)
         # Connection Rate now uses 2+ min threshold (connections / outbound calls)
         connection_rate = f"{round(connections / outbound_calls * 100)}%" if outbound_calls > 0 else "0%"
-        single_dial = call_data.get('single_dial_calls', 0)
-        double_sequences = call_data.get('double_dial_sequences', 0)
-        triple_sequences = call_data.get('triple_dial_sequences', 0)
+        single_dial_count = call_data.get('single_dial_calls', 0)
+        double_seq_count = call_data.get('double_dial_sequences', 0)
+        triple_seq_count = call_data.get('triple_dial_sequences', 0)
+
+        # Calculate percentages for dial sequences (as % of outbound calls)
+        # For 2x and 3x, multiply by 2 and 3 respectively to get total calls in sequences
+        double_calls = double_seq_count * 2
+        triple_calls = triple_seq_count * 3
+
+        single_dial = f"{single_dial_count} ({round(single_dial_count / outbound_calls * 100)}%)" if outbound_calls > 0 else "0 (0%)"
+        double_sequences = f"{double_seq_count} ({round(double_calls / outbound_calls * 100)}%)" if outbound_calls > 0 else "0 (0%)"
+        triple_sequences = f"{triple_seq_count} ({round(triple_calls / outbound_calls * 100)}%)" if outbound_calls > 0 else "0 (0%)"
 
         # Store metrics in order for this agent (matches metric_labels order)
         agent_data[agent] = [
