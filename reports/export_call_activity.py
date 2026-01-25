@@ -207,6 +207,16 @@ def calculate_aggregated_metrics(person_id, calls, offer_date):
             'calls_to_offer': 0,
             'connections_to_offer': 0,
             'calls_after_offer': 0,
+            # Follow-up metrics (after offer)
+            'connections_after_offer': 0,
+            'talk_time_after_offer_seconds': 0,
+            'first_followup_date': '',
+            'first_followup_connection_date': '',
+            'last_followup_date': '',
+            'days_offer_to_first_followup': '',
+            'days_offer_to_first_followup_connection': '',
+            'days_offer_to_last_followup': '',
+            'longest_followup_call_seconds': 0,
         }
 
     total_calls = len(calls)
@@ -243,6 +253,9 @@ def calculate_aggregated_metrics(person_id, calls, offer_date):
     calls_to_offer = 0
     connections_to_offer = 0
     calls_after_offer = 0
+    connections_after_offer = 0
+    talk_time_after_offer = 0
+    followup_calls = []
 
     for call in calls:
         if call['call_date'] < offer_date_only:
@@ -250,7 +263,35 @@ def calculate_aggregated_metrics(person_id, calls, offer_date):
             if call['is_connection']:
                 connections_to_offer += 1
         else:
+            # This is a follow-up call (on or after offer date)
             calls_after_offer += 1
+            talk_time_after_offer += call['duration']
+            followup_calls.append(call)
+            if call['is_connection']:
+                connections_after_offer += 1
+
+    # Follow-up specific metrics
+    first_followup_date = ''
+    first_followup_connection_date = ''
+    last_followup_date = ''
+    days_offer_to_first_followup = ''
+    days_offer_to_first_followup_connection = ''
+    days_offer_to_last_followup = ''
+    longest_followup_call = 0
+
+    if followup_calls:
+        first_followup_date = followup_calls[0]['call_date']
+        last_followup_date = followup_calls[-1]['call_date']
+        days_offer_to_first_followup = (first_followup_date - offer_date_only).days
+        days_offer_to_last_followup = (last_followup_date - offer_date_only).days
+        longest_followup_call = max(c['duration'] for c in followup_calls)
+
+        # First connection after offer
+        for call in followup_calls:
+            if call['is_connection']:
+                first_followup_connection_date = call['call_date']
+                days_offer_to_first_followup_connection = (first_followup_connection_date - offer_date_only).days
+                break
 
     return {
         'person_id': person_id,
@@ -267,6 +308,16 @@ def calculate_aggregated_metrics(person_id, calls, offer_date):
         'calls_to_offer': calls_to_offer,
         'connections_to_offer': connections_to_offer,
         'calls_after_offer': calls_after_offer,
+        # Follow-up metrics (after offer)
+        'connections_after_offer': connections_after_offer,
+        'talk_time_after_offer_seconds': talk_time_after_offer,
+        'first_followup_date': str(first_followup_date) if first_followup_date else '',
+        'first_followup_connection_date': str(first_followup_connection_date) if first_followup_connection_date else '',
+        'last_followup_date': str(last_followup_date) if last_followup_date else '',
+        'days_offer_to_first_followup': days_offer_to_first_followup if days_offer_to_first_followup != '' else '',
+        'days_offer_to_first_followup_connection': days_offer_to_first_followup_connection if days_offer_to_first_followup_connection != '' else '',
+        'days_offer_to_last_followup': days_offer_to_last_followup if days_offer_to_last_followup != '' else '',
+        'longest_followup_call_seconds': longest_followup_call,
     }
 
 
@@ -323,6 +374,16 @@ def export_aggregated_metrics(leads, calls_by_lead, output_dir):
         'calls_to_offer',
         'connections_to_offer',
         'calls_after_offer',
+        # Follow-up metrics (after offer)
+        'connections_after_offer',
+        'talk_time_after_offer_seconds',
+        'first_followup_date',
+        'first_followup_connection_date',
+        'last_followup_date',
+        'days_offer_to_first_followup',
+        'days_offer_to_first_followup_connection',
+        'days_offer_to_last_followup',
+        'longest_followup_call_seconds',
     ]
 
     with open(output_file, 'w', newline='', encoding='utf-8') as f:
@@ -337,8 +398,16 @@ def export_aggregated_metrics(leads, calls_by_lead, output_dir):
     # Summary stats
     total_calls = sum(r['total_calls'] for r in rows)
     total_connections = sum(r['total_connections'] for r in rows)
+    total_followup_calls = sum(r['calls_after_offer'] for r in rows)
+    total_followup_connections = sum(r['connections_after_offer'] for r in rows)
+    leads_with_followup = sum(1 for r in rows if r['calls_after_offer'] > 0)
+
     print(f"\nTotal outbound calls: {total_calls}")
     print(f"Total connections (2+ min): {total_connections}")
+    print(f"\nFollow-up activity (after offer):")
+    print(f"  Total follow-up calls: {total_followup_calls}")
+    print(f"  Total follow-up connections: {total_followup_connections}")
+    print(f"  Leads with follow-up calls: {leads_with_followup}")
 
 
 def export_call_detail(leads, calls_by_lead, output_dir):
