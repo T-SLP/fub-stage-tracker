@@ -432,7 +432,9 @@ def query_call_metrics(start_date: datetime, end_date: datetime, user_ids: Dict[
             'unique_leads_dialed': set(),  # Track unique personIds for leads dialed
             'unique_leads_connected': set(),  # Track unique personIds for conversations (2+ min)
             'single_dial_calls': 0,
+            'single_dial_answered': 0,  # Single dials that resulted in 2+ min call
             'double_dial_sequences': 0,
+            'double_dial_answered': 0,  # Double dial sequences that resulted in 2+ min call
             'triple_dial_sequences': 0,
             'multi_dial_calls': 0,  # Total calls that are part of any 2x+ sequence
         }
@@ -474,6 +476,7 @@ def query_call_metrics(start_date: datetime, end_date: datetime, user_ids: Dict[
                     call_metrics[agent_name]['outbound_call_details'].append({
                         'to_number': to_number,
                         'created': created,
+                        'duration': duration,
                     })
 
                 # Track unique leads dialed (by personId)
@@ -516,12 +519,16 @@ def query_call_metrics(start_date: datetime, end_date: datetime, user_ids: Dict[
         calls.sort(key=lambda x: x['created'])
 
         total_multi_dial_calls = 0
+        single_dials = 0
+        single_dial_answered = 0
         double_sequences = 0
+        double_dial_answered = 0
         triple_sequences = 0
 
         i = 0
         while i < len(calls):
             current_number = calls[i]['to_number']
+            sequence_calls = [calls[i]]
             sequence_length = 1
 
             j = i + 1
@@ -533,10 +540,14 @@ def query_call_metrics(start_date: datetime, end_date: datetime, user_ids: Dict[
 
                 # Same number and within 2 minutes of previous call = part of sequence
                 if calls[j]['to_number'] == current_number and time_diff <= 120:
+                    sequence_calls.append(calls[j])
                     sequence_length += 1
                     j += 1
                 else:
                     break
+
+            # Check if any call in the sequence resulted in an answer (2+ min)
+            sequence_answered = any(c.get('duration', 0) >= 120 for c in sequence_calls)
 
             # Count the sequence
             if sequence_length >= 3:
@@ -545,14 +556,23 @@ def query_call_metrics(start_date: datetime, end_date: datetime, user_ids: Dict[
             elif sequence_length == 2:
                 double_sequences += 1
                 total_multi_dial_calls += sequence_length
+                if sequence_answered:
+                    double_dial_answered += 1
+            else:
+                # Single dial
+                single_dials += 1
+                if sequence_answered:
+                    single_dial_answered += 1
 
             # Move to next unprocessed call
             i = j if j > i + 1 else i + 1
 
+        call_metrics[agent_name]['single_dial_calls'] = single_dials
+        call_metrics[agent_name]['single_dial_answered'] = single_dial_answered
         call_metrics[agent_name]['double_dial_sequences'] = double_sequences
+        call_metrics[agent_name]['double_dial_answered'] = double_dial_answered
         call_metrics[agent_name]['triple_dial_sequences'] = triple_sequences
         call_metrics[agent_name]['multi_dial_calls'] = total_multi_dial_calls
-        call_metrics[agent_name]['single_dial_calls'] = call_metrics[agent_name]['outbound_calls'] - total_multi_dial_calls
 
         # Convert unique leads sets to counts and clean up raw data
         call_metrics[agent_name]['unique_leads_dialed'] = len(call_metrics[agent_name]['unique_leads_dialed'])
@@ -595,35 +615,15 @@ def write_to_google_sheets(
     spreadsheet = client.open_by_key(WEEKLY_AGENT_SHEET_ID)
     existing_tabs = [ws.title for ws in spreadsheet.worksheets()]
 
-    # Prepare header row for Latest tab
-    latest_headers = [
-        "Agent",
-        "Offers Made",
-        "Contracts Sent",
-        "Under Contract",
-        "Closed",
-        "Outbound Calls",
-        "Unique Leads Dialed",
-        "Unique Leads Connected",
-        "Conversations (2+ min)",
-        "Connection Rate",
-        "Talk Time (min)",
-        "Avg Call (min)",
-        "Single Dial",
-        "2x Sequences",
-        "3x Sequences",
-    ]
-
     # Prepare header row for History tab (includes week column)
-    # Order matches the Latest tab structure (KPIs first, then Metrics)
     history_headers = [
         "Week Starting",
         "Agent",
         # KPIs
-        "Talk Time (min)",
         "Offers Made",
         "Contracts Sent",
         # Metrics
+        "Talk Time (min)",
         "Outbound Calls",
         "Connections (2+ min)",
         "Connection Rate",
@@ -633,7 +633,6 @@ def write_to_google_sheets(
         "Avg Call (min)",
         "Single Dial",
         "2x Dial",
-        "3x Dial",
         "Signed Contracts",
     ]
 
@@ -672,8 +671,17 @@ def write_to_google_sheets(
         # Unique Lead Connection Rate
         unique_lead_conn_rate = f"{round(unique_leads_connected / unique_leads * 100)}%" if unique_leads > 0 else "0%"
         single_dial = call_data.get('single_dial_calls', 0)
+        single_dial_answered = call_data.get('single_dial_answered', 0)
         double_dial = call_data.get('double_dial_sequences', 0)
-        triple_dial = call_data.get('triple_dial_sequences', 0)
+        double_dial_answered = call_data.get('double_dial_answered', 0)
+
+        # Calculate answer rates for dial sequences
+        single_dial_rate = round(single_dial_answered / single_dial * 100) if single_dial > 0 else 0
+        double_dial_rate = round(double_dial_answered / double_dial * 100) if double_dial > 0 else 0
+
+        # Format with answer rate in parentheses
+        single_dial_with_rate = f"{single_dial} ({single_dial_rate}%)"
+        double_dial_with_rate = f"{double_dial} ({double_dial_rate}%)"
 
         # At-risk leads (open offers with only 1 follow-up call)
         at_risk = at_risk_leads.get(agent, 0) if at_risk_leads else 0
@@ -694,17 +702,18 @@ def write_to_google_sheets(
             'unique_lead_conn_rate': unique_lead_conn_rate,
             'avg_call_min': avg_call_min,
             'single_dial': single_dial,
+            'single_dial_with_rate': single_dial_with_rate,
             'double_dial': double_dial,
-            'triple_dial': triple_dial,
+            'double_dial_with_rate': double_dial_with_rate,
             'signed_contracts': signed_contracts,
         }
 
         # Row for History tab (with week column)
         history_row = [
-            week_label, agent, talk_time, offers, contracts_sent,
-            outbound_calls, connections, connection_rate,
+            week_label, agent, offers, contracts_sent,
+            talk_time, outbound_calls, connections, connection_rate,
             unique_leads, unique_leads_connected, unique_lead_conn_rate,
-            avg_call_min, single_dial, double_dial, triple_dial, signed_contracts
+            avg_call_min, single_dial, double_dial, signed_contracts
         ]
         history_rows_to_add.append(history_row)
 
@@ -728,7 +737,6 @@ def write_to_google_sheets(
 
     # KPI rows
     kpi_metrics = [
-        ("Talk Time (min)", 'talk_time'),
         ("Offers Made", 'offers'),
         ("Contracts Sent", 'contracts_sent'),
         ("Open Offers w/ 1 Follow-Up", 'at_risk_low_followup'),
@@ -740,11 +748,12 @@ def write_to_google_sheets(
     # Empty row between sections
     latest_rows.append([""])
 
-    # Row 7: "Metrics" section header
+    # Row: "Metrics" section header
     latest_rows.append(["Metrics"])
 
-    # Metrics rows
+    # Metrics rows (Talk Time moved here, 3x Dial removed)
     metric_items = [
+        ("Talk Time (min)", 'talk_time'),
         ("Outbound Calls", 'outbound_calls'),
         ("Connections (2+ min)", 'connections'),
         ("Connection Rate", 'connection_rate'),
@@ -752,9 +761,8 @@ def write_to_google_sheets(
         ("Unique Leads Connected", 'unique_leads_connected'),
         ("Unique Lead Connection Rate", 'unique_lead_conn_rate'),
         ("Avg Call (min)", 'avg_call_min'),
-        ("Single Dial", 'single_dial'),
-        ("2x Dial", 'double_dial'),
-        ("3x Dial", 'triple_dial'),
+        ("Single Dial", 'single_dial_with_rate'),
+        ("2x Dial", 'double_dial_with_rate'),
         ("Signed Contracts", 'signed_contracts'),
     ]
     for label, key in metric_items:
@@ -818,13 +826,13 @@ def write_to_google_sheets(
             # Empty sheet, just add header and data
             history_rows = [history_headers] + history_rows_to_add
             history_ws.update(history_rows, 'A1')
-            history_ws.format('A1:P1', {'textFormat': {'bold': True}})
+            history_ws.format('A1:O1', {'textFormat': {'bold': True}})
     else:
         # Create new History tab
         history_ws = spreadsheet.add_worksheet(title="History", rows=1000, cols=20, index=1)
         history_rows = [history_headers] + history_rows_to_add
         history_ws.update(history_rows, 'A1')
-        history_ws.format('A1:P1', {'textFormat': {'bold': True}})
+        history_ws.format('A1:O1', {'textFormat': {'bold': True}})
 
     return f"https://docs.google.com/spreadsheets/d/{WEEKLY_AGENT_SHEET_ID}/edit"
 
