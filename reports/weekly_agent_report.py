@@ -108,32 +108,31 @@ def get_date_range(days_back: int = None, previous_week: bool = False) -> tuple[
     return start_date, end_date
 
 
-def query_open_offers_low_followup(fub_api_key: str) -> Dict[str, int]:
+def query_open_offers_metrics(fub_api_key: str) -> Dict[str, Dict[str, Any]]:
     """
-    Query for open offers with insufficient follow-up (only 1 call after offer).
+    Query open offers and calculate follow-up metrics as percentages.
 
-    This identifies leads at highest risk of falling through due to insufficient follow-up.
-    Data shows leads with only 1 follow-up have 0% sign rate vs 12.4% for 3+ follow-ups.
+    Returns per-agent metrics:
+    - total_open_offers: Total leads in "Offers Made" or "Contract Sent" (24+ hrs)
+    - low_followup_pct: % of open offers with only 1 follow-up call
+    - low_connection_pct: % of open offers with only 1 connection (2+ min call)
 
-    Criteria:
+    Criteria for open offers:
     - Lead is currently in "ACQ - Offers Made" or "ACQ - Contract Sent" stage
     - Lead has been in this stage for 24+ hours (exclude immediate declines)
-    - Lead has received exactly 1 call since the verbal offer date
 
-    Returns: {agent_name: count_of_at_risk_leads, ...}
+    Returns: {agent_name: {'total': N, 'low_followup_pct': 'X%', 'low_connection_pct': 'Y%'}, ...}
     """
     if not SUPABASE_DB_URL:
         return {}
 
     conn = psycopg2.connect(SUPABASE_DB_URL, sslmode='require')
 
-    # First, get all leads currently in open offer stages (24+ hours old)
+    # Get all leads currently in open offer stages (24+ hours old)
     twenty_four_hours_ago = datetime.now(EASTERN_TZ) - timedelta(hours=24)
 
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-            # Get leads currently in offer stages with their offer dates
-            # We need the most recent stage for each lead to determine current state
             cur.execute("""
                 WITH latest_stages AS (
                     SELECT DISTINCT ON (person_id)
@@ -179,15 +178,13 @@ def query_open_offers_low_followup(fub_api_key: str) -> Dict[str, int]:
     if not open_offers or not fub_api_key:
         return {}
 
-    # Now fetch calls to determine follow-up counts
+    # Fetch calls to determine follow-up counts
     auth_string = base64.b64encode(f'{fub_api_key}:'.encode()).decode()
 
-    # Find the earliest offer date to limit our call query
     earliest_offer = min(o['offer_date'] for o in open_offers)
     start_str = (earliest_offer - timedelta(days=1)).strftime('%Y-%m-%d')
     end_str = (datetime.now(EASTERN_TZ) + timedelta(days=1)).strftime('%Y-%m-%d')
 
-    # Fetch calls
     all_calls = []
     offset = 0
     limit = 100
@@ -222,171 +219,11 @@ def query_open_offers_low_followup(fub_api_key: str) -> Dict[str, int]:
         except Exception:
             break
 
-    # Build map of person_id -> calls after offer date
+    # Build maps of person_id -> calls and connections after offer date
     target_person_ids = {o['person_id'] for o in open_offers}
     offer_dates_map = {o['person_id']: o['offer_date'] for o in open_offers}
 
     calls_after_offer = {pid: 0 for pid in target_person_ids}
-
-    for call in all_calls:
-        person_id = call.get('personId')
-        if not person_id:
-            continue
-
-        person_id_str = str(person_id)
-        if person_id_str not in target_person_ids:
-            continue
-
-        # Only count outbound calls
-        if call.get('isIncoming') == True:
-            continue
-
-        # Check if call is after offer date
-        created = call.get('created')
-        if not created:
-            continue
-
-        try:
-            call_date = datetime.fromisoformat(created.replace('Z', '+00:00')).date()
-            offer_date = offer_dates_map[person_id_str]
-            if hasattr(offer_date, 'date'):
-                offer_date = offer_date.date()
-
-            if call_date >= offer_date:
-                calls_after_offer[person_id_str] += 1
-        except Exception:
-            continue
-
-    # Count leads with exactly 1 follow-up call per agent
-    at_risk_by_agent = {}
-    for offer in open_offers:
-        person_id = offer['person_id']
-        agent = offer['agent']
-        followup_count = calls_after_offer.get(person_id, 0)
-
-        if followup_count == 1:
-            at_risk_by_agent[agent] = at_risk_by_agent.get(agent, 0) + 1
-
-    return at_risk_by_agent
-
-
-def query_open_offers_low_connections(fub_api_key: str) -> Dict[str, int]:
-    """
-    Query for open offers with only 1 connection (2+ min call) after the offer.
-
-    Similar to query_open_offers_low_followup but counts connections (meaningful
-    conversations) rather than all calls.
-
-    Criteria:
-    - Lead is currently in "ACQ - Offers Made" or "ACQ - Contract Sent" stage
-    - Lead has been in this stage for 24+ hours (exclude immediate declines)
-    - Lead has received exactly 1 connection (call >= 120 seconds) since offer date
-
-    Returns: {agent_name: count_of_leads_with_1_connection, ...}
-    """
-    if not SUPABASE_DB_URL:
-        return {}
-
-    conn = psycopg2.connect(SUPABASE_DB_URL, sslmode='require')
-
-    # First, get all leads currently in open offer stages (24+ hours old)
-    twenty_four_hours_ago = datetime.now(EASTERN_TZ) - timedelta(hours=24)
-
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-            # Get leads currently in offer stages with their offer dates
-            cur.execute("""
-                WITH latest_stages AS (
-                    SELECT DISTINCT ON (person_id)
-                        person_id,
-                        stage_to,
-                        changed_at,
-                        COALESCE(
-                            assigned_user_name,
-                            raw_payload->>'assignedTo',
-                            CASE WHEN changed_at < '2025-12-19' THEN 'Madeleine Penales' ELSE 'Unassigned' END
-                        ) as agent
-                    FROM stage_changes
-                    ORDER BY person_id, changed_at DESC
-                ),
-                offer_dates AS (
-                    SELECT DISTINCT ON (person_id)
-                        person_id,
-                        changed_at as offer_date
-                    FROM stage_changes
-                    WHERE stage_to = 'ACQ - Offers Made'
-                    ORDER BY person_id, changed_at
-                )
-                SELECT
-                    ls.person_id,
-                    ls.agent,
-                    od.offer_date
-                FROM latest_stages ls
-                JOIN offer_dates od ON ls.person_id = od.person_id
-                WHERE ls.stage_to IN ('ACQ - Offers Made', 'ACQ - Contract Sent')
-                  AND ls.changed_at < %s
-            """, (twenty_four_hours_ago,))
-
-            open_offers = []
-            for row in cur.fetchall():
-                open_offers.append({
-                    'person_id': str(row['person_id']),
-                    'agent': row['agent'],
-                    'offer_date': row['offer_date'],
-                })
-    finally:
-        conn.close()
-
-    if not open_offers or not fub_api_key:
-        return {}
-
-    # Now fetch calls to determine connection counts
-    auth_string = base64.b64encode(f'{fub_api_key}:'.encode()).decode()
-
-    # Find the earliest offer date to limit our call query
-    earliest_offer = min(o['offer_date'] for o in open_offers)
-    start_str = (earliest_offer - timedelta(days=1)).strftime('%Y-%m-%d')
-    end_str = (datetime.now(EASTERN_TZ) + timedelta(days=1)).strftime('%Y-%m-%d')
-
-    # Fetch calls
-    all_calls = []
-    offset = 0
-    limit = 100
-
-    while True:
-        try:
-            response = requests.get(
-                'https://api.followupboss.com/v1/calls',
-                params={
-                    'createdAfter': start_str,
-                    'createdBefore': end_str,
-                    'limit': limit,
-                    'offset': offset
-                },
-                headers={
-                    'Authorization': f'Basic {auth_string}',
-                    'Content-Type': 'application/json'
-                },
-                timeout=30
-            )
-
-            if response.status_code == 200:
-                data = response.json()
-                calls = data.get('calls', [])
-                all_calls.extend(calls)
-
-                if len(calls) < limit:
-                    break
-                offset += limit
-            else:
-                break
-        except Exception:
-            break
-
-    # Build map of person_id -> connections (2+ min) after offer date
-    target_person_ids = {o['person_id'] for o in open_offers}
-    offer_dates_map = {o['person_id']: o['offer_date'] for o in open_offers}
-
     connections_after_offer = {pid: 0 for pid in target_person_ids}
 
     for call in all_calls:
@@ -402,12 +239,6 @@ def query_open_offers_low_connections(fub_api_key: str) -> Dict[str, int]:
         if call.get('isIncoming') == True:
             continue
 
-        # Only count connections (2+ minutes = 120+ seconds)
-        duration = call.get('duration', 0) or 0
-        if duration < 120:
-            continue
-
-        # Check if call is after offer date
         created = call.get('created')
         if not created:
             continue
@@ -419,21 +250,52 @@ def query_open_offers_low_connections(fub_api_key: str) -> Dict[str, int]:
                 offer_date = offer_date.date()
 
             if call_date >= offer_date:
-                connections_after_offer[person_id_str] += 1
+                calls_after_offer[person_id_str] += 1
+                # Also count connections (2+ min = 120+ seconds)
+                duration = call.get('duration', 0) or 0
+                if duration >= 120:
+                    connections_after_offer[person_id_str] += 1
         except Exception:
             continue
 
-    # Count leads with exactly 1 connection after offer per agent
-    low_conn_by_agent = {}
+    # Calculate per-agent metrics
+    agent_totals = {}
+    agent_low_followup = {}
+    agent_low_connection = {}
+
     for offer in open_offers:
-        person_id = offer['person_id']
         agent = offer['agent']
-        conn_count = connections_after_offer.get(person_id, 0)
+        person_id = offer['person_id']
+        followup_count = calls_after_offer.get(person_id, 0)
+        connection_count = connections_after_offer.get(person_id, 0)
 
-        if conn_count == 1:
-            low_conn_by_agent[agent] = low_conn_by_agent.get(agent, 0) + 1
+        agent_totals[agent] = agent_totals.get(agent, 0) + 1
 
-    return low_conn_by_agent
+        if followup_count == 1:
+            agent_low_followup[agent] = agent_low_followup.get(agent, 0) + 1
+
+        if connection_count == 1:
+            agent_low_connection[agent] = agent_low_connection.get(agent, 0) + 1
+
+    # Build result with percentages
+    result = {}
+    for agent in agent_totals:
+        total = agent_totals[agent]
+        low_followup = agent_low_followup.get(agent, 0)
+        low_connection = agent_low_connection.get(agent, 0)
+
+        low_followup_pct = round(low_followup / total * 100) if total > 0 else 0
+        low_connection_pct = round(low_connection / total * 100) if total > 0 else 0
+
+        result[agent] = {
+            'total': total,
+            'low_followup_count': low_followup,
+            'low_followup_pct': f"{low_followup_pct}%",
+            'low_connection_count': low_connection,
+            'low_connection_pct': f"{low_connection_pct}%",
+        }
+
+    return result
 
 
 def query_stage_metrics(start_date: datetime, end_date: datetime) -> Dict[str, Dict[str, int]]:
@@ -753,8 +615,7 @@ def write_to_google_sheets(
     call_metrics: Dict[str, Dict[str, Any]],
     start_date: datetime,
     end_date: datetime,
-    at_risk_leads: Dict[str, int] = None,
-    low_conn_leads: Dict[str, int] = None
+    open_offers_metrics: Dict[str, Dict[str, Any]] = None
 ) -> str:
     """
     Write the report to Google Sheets with two tabs:
@@ -850,11 +711,10 @@ def write_to_google_sheets(
         single_dial_with_rate = f"{single_dial} ({single_dial_rate}%)"
         double_dial_with_rate = f"{double_dial} ({double_dial_rate}%)"
 
-        # At-risk leads (open offers with only 1 follow-up call)
-        at_risk = at_risk_leads.get(agent, 0) if at_risk_leads else 0
-
-        # Open offers with only 1 connection after offer
-        low_conn = low_conn_leads.get(agent, 0) if low_conn_leads else 0
+        # Open offers follow-up metrics (as percentages)
+        agent_offer_metrics = open_offers_metrics.get(agent, {}) if open_offers_metrics else {}
+        low_followup_pct = agent_offer_metrics.get('low_followup_pct', '0%')
+        low_conn_pct = agent_offer_metrics.get('low_connection_pct', '0%')
 
         # Store all metrics for this agent
         agent_data[agent] = {
@@ -862,7 +722,7 @@ def write_to_google_sheets(
             'talk_time': talk_time,
             'offers': offers,
             'contracts_sent': contracts_sent,
-            'at_risk_low_followup': at_risk,
+            'low_followup_pct': low_followup_pct,
             # Metrics
             'outbound_calls': outbound_calls,
             'connections': connections,
@@ -875,7 +735,7 @@ def write_to_google_sheets(
             'single_dial_with_rate': single_dial_with_rate,
             'double_dial': double_dial,
             'double_dial_with_rate': double_dial_with_rate,
-            'low_conn_after_offer': low_conn,
+            'low_conn_pct': low_conn_pct,
             'signed_contracts': signed_contracts,
         }
 
@@ -900,7 +760,6 @@ def write_to_google_sheets(
     totals = {
         'offers': sum(agent_data[agent]['offers'] for agent in all_agents),
         'contracts_sent': sum(agent_data[agent]['contracts_sent'] for agent in all_agents),
-        'at_risk_low_followup': sum(agent_data[agent]['at_risk_low_followup'] for agent in all_agents),
         'talk_time': sum(agent_data[agent]['talk_time'] for agent in all_agents),
         'outbound_calls': sum(agent_data[agent]['outbound_calls'] for agent in all_agents),
         'connections': sum(agent_data[agent]['connections'] for agent in all_agents),
@@ -908,7 +767,6 @@ def write_to_google_sheets(
         'unique_leads_connected': sum(agent_data[agent]['unique_leads_connected'] for agent in all_agents),
         'single_dial': sum(agent_data[agent]['single_dial'] for agent in all_agents),
         'double_dial': sum(agent_data[agent]['double_dial'] for agent in all_agents),
-        'low_conn_after_offer': sum(agent_data[agent]['low_conn_after_offer'] for agent in all_agents),
         'signed_contracts': sum(agent_data[agent]['signed_contracts'] for agent in all_agents),
     }
     # Calculate rates from totals (not averaging rates)
@@ -919,11 +777,18 @@ def write_to_google_sheets(
     totals['single_dial_with_rate'] = totals['single_dial']
     totals['double_dial_with_rate'] = totals['double_dial']
 
+    # Calculate overall open offers percentages from raw counts
+    total_open_offers = sum(m['total'] for m in open_offers_metrics.values()) if open_offers_metrics else 0
+    total_low_followup = sum(m['low_followup_count'] for m in open_offers_metrics.values()) if open_offers_metrics else 0
+    total_low_conn = sum(m['low_connection_count'] for m in open_offers_metrics.values()) if open_offers_metrics else 0
+    totals['low_followup_pct'] = f"{round(total_low_followup / total_open_offers * 100)}%" if total_open_offers > 0 else "0%"
+    totals['low_conn_pct'] = f"{round(total_low_conn / total_open_offers * 100)}%" if total_open_offers > 0 else "0%"
+
     # Standards (expected minimums) - placeholder values to be customized
     standards = {
         'offers': 5,
         'contracts_sent': 3,
-        'at_risk_low_followup': "< 3",  # Lower is better for this metric
+        'low_followup_pct': "< 20%",  # Lower is better - target under 20%
         'talk_time': 300,
         'outbound_calls': 200,
         'connections': 30,
@@ -934,7 +799,7 @@ def write_to_google_sheets(
         'avg_call_min': 1.5,
         'single_dial_with_rate': "-",
         'double_dial_with_rate': "-",
-        'low_conn_after_offer': "-",
+        'low_conn_pct': "-",
         'signed_contracts': 2,
     }
 
@@ -952,7 +817,7 @@ def write_to_google_sheets(
     kpi_metrics = [
         ("Offers Made", 'offers'),
         ("Contracts Sent", 'contracts_sent'),
-        ("Open Offers w/ 1 Follow-Up", 'at_risk_low_followup'),
+        ("% Open Offers w/ 1 Follow-Up", 'low_followup_pct'),
     ]
     for label, key in kpi_metrics:
         row = [label] + [agent_data[agent][key] for agent in all_agents] + [totals[key], standards[key]]
@@ -976,7 +841,7 @@ def write_to_google_sheets(
         ("Avg Call (min)", 'avg_call_min'),
         ("Single Dial", 'single_dial_with_rate'),
         ("2x Dial", 'double_dial_with_rate'),
-        ("Open Offers w/ 1 Connection After Offer", 'low_conn_after_offer'),
+        ("% Open Offers w/ 1 Connection After Offer", 'low_conn_pct'),
         ("Signed Contracts", 'signed_contracts'),
     ]
     for label, key in metric_items:
@@ -1129,17 +994,13 @@ def main():
     call_metrics = query_call_metrics(start_date, end_date, fub_users)
     print(f"Retrieved call data for {len(call_metrics)} users")
 
-    # Get at-risk leads (open offers with only 1 follow-up call)
-    print("Querying open offers with low follow-up...")
-    at_risk_leads = query_open_offers_low_followup(FUB_API_KEY)
-    total_at_risk = sum(at_risk_leads.values())
-    print(f"Found {total_at_risk} leads at risk (only 1 follow-up call)")
-
-    # Get open offers with only 1 connection after offer
-    print("Querying open offers with low connections after offer...")
-    low_conn_leads = query_open_offers_low_connections(FUB_API_KEY)
-    total_low_conn = sum(low_conn_leads.values())
-    print(f"Found {total_low_conn} leads with only 1 connection after offer")
+    # Get open offers metrics (follow-up and connection percentages)
+    print("Querying open offers follow-up metrics...")
+    open_offers_metrics = query_open_offers_metrics(FUB_API_KEY)
+    total_open = sum(m['total'] for m in open_offers_metrics.values()) if open_offers_metrics else 0
+    total_low_followup = sum(m['low_followup_count'] for m in open_offers_metrics.values()) if open_offers_metrics else 0
+    total_low_conn = sum(m['low_connection_count'] for m in open_offers_metrics.values()) if open_offers_metrics else 0
+    print(f"Found {total_open} open offers, {total_low_followup} with only 1 follow-up, {total_low_conn} with only 1 connection")
 
     def print_report_to_console(title_suffix=""):
         """Helper to print report data to console."""
@@ -1191,7 +1052,7 @@ def main():
     else:
         # Full report - write to Google Sheets
         print("Writing report to Google Sheets...")
-        sheet_url = write_to_google_sheets(stage_metrics, call_metrics, start_date, end_date, at_risk_leads, low_conn_leads)
+        sheet_url = write_to_google_sheets(stage_metrics, call_metrics, start_date, end_date, open_offers_metrics)
         print(f"\nReport created successfully!")
         print(f"View report: {sheet_url}")
 
