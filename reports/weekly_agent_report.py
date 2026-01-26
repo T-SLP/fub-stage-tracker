@@ -270,6 +270,172 @@ def query_open_offers_low_followup(fub_api_key: str) -> Dict[str, int]:
     return at_risk_by_agent
 
 
+def query_open_offers_low_connections(fub_api_key: str) -> Dict[str, int]:
+    """
+    Query for open offers with only 1 connection (2+ min call) after the offer.
+
+    Similar to query_open_offers_low_followup but counts connections (meaningful
+    conversations) rather than all calls.
+
+    Criteria:
+    - Lead is currently in "ACQ - Offers Made" or "ACQ - Contract Sent" stage
+    - Lead has been in this stage for 24+ hours (exclude immediate declines)
+    - Lead has received exactly 1 connection (call >= 120 seconds) since offer date
+
+    Returns: {agent_name: count_of_leads_with_1_connection, ...}
+    """
+    if not SUPABASE_DB_URL:
+        return {}
+
+    conn = psycopg2.connect(SUPABASE_DB_URL, sslmode='require')
+
+    # First, get all leads currently in open offer stages (24+ hours old)
+    twenty_four_hours_ago = datetime.now(EASTERN_TZ) - timedelta(hours=24)
+
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            # Get leads currently in offer stages with their offer dates
+            cur.execute("""
+                WITH latest_stages AS (
+                    SELECT DISTINCT ON (person_id)
+                        person_id,
+                        stage_to,
+                        changed_at,
+                        COALESCE(
+                            assigned_user_name,
+                            raw_payload->>'assignedTo',
+                            CASE WHEN changed_at < '2025-12-19' THEN 'Madeleine Penales' ELSE 'Unassigned' END
+                        ) as agent
+                    FROM stage_changes
+                    ORDER BY person_id, changed_at DESC
+                ),
+                offer_dates AS (
+                    SELECT DISTINCT ON (person_id)
+                        person_id,
+                        changed_at as offer_date
+                    FROM stage_changes
+                    WHERE stage_to = 'ACQ - Offers Made'
+                    ORDER BY person_id, changed_at
+                )
+                SELECT
+                    ls.person_id,
+                    ls.agent,
+                    od.offer_date
+                FROM latest_stages ls
+                JOIN offer_dates od ON ls.person_id = od.person_id
+                WHERE ls.stage_to IN ('ACQ - Offers Made', 'ACQ - Contract Sent')
+                  AND ls.changed_at < %s
+            """, (twenty_four_hours_ago,))
+
+            open_offers = []
+            for row in cur.fetchall():
+                open_offers.append({
+                    'person_id': str(row['person_id']),
+                    'agent': row['agent'],
+                    'offer_date': row['offer_date'],
+                })
+    finally:
+        conn.close()
+
+    if not open_offers or not fub_api_key:
+        return {}
+
+    # Now fetch calls to determine connection counts
+    auth_string = base64.b64encode(f'{fub_api_key}:'.encode()).decode()
+
+    # Find the earliest offer date to limit our call query
+    earliest_offer = min(o['offer_date'] for o in open_offers)
+    start_str = (earliest_offer - timedelta(days=1)).strftime('%Y-%m-%d')
+    end_str = (datetime.now(EASTERN_TZ) + timedelta(days=1)).strftime('%Y-%m-%d')
+
+    # Fetch calls
+    all_calls = []
+    offset = 0
+    limit = 100
+
+    while True:
+        try:
+            response = requests.get(
+                'https://api.followupboss.com/v1/calls',
+                params={
+                    'createdAfter': start_str,
+                    'createdBefore': end_str,
+                    'limit': limit,
+                    'offset': offset
+                },
+                headers={
+                    'Authorization': f'Basic {auth_string}',
+                    'Content-Type': 'application/json'
+                },
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                calls = data.get('calls', [])
+                all_calls.extend(calls)
+
+                if len(calls) < limit:
+                    break
+                offset += limit
+            else:
+                break
+        except Exception:
+            break
+
+    # Build map of person_id -> connections (2+ min) after offer date
+    target_person_ids = {o['person_id'] for o in open_offers}
+    offer_dates_map = {o['person_id']: o['offer_date'] for o in open_offers}
+
+    connections_after_offer = {pid: 0 for pid in target_person_ids}
+
+    for call in all_calls:
+        person_id = call.get('personId')
+        if not person_id:
+            continue
+
+        person_id_str = str(person_id)
+        if person_id_str not in target_person_ids:
+            continue
+
+        # Only count outbound calls
+        if call.get('isIncoming') == True:
+            continue
+
+        # Only count connections (2+ minutes = 120+ seconds)
+        duration = call.get('duration', 0) or 0
+        if duration < 120:
+            continue
+
+        # Check if call is after offer date
+        created = call.get('created')
+        if not created:
+            continue
+
+        try:
+            call_date = datetime.fromisoformat(created.replace('Z', '+00:00')).date()
+            offer_date = offer_dates_map[person_id_str]
+            if hasattr(offer_date, 'date'):
+                offer_date = offer_date.date()
+
+            if call_date >= offer_date:
+                connections_after_offer[person_id_str] += 1
+        except Exception:
+            continue
+
+    # Count leads with exactly 1 connection after offer per agent
+    low_conn_by_agent = {}
+    for offer in open_offers:
+        person_id = offer['person_id']
+        agent = offer['agent']
+        conn_count = connections_after_offer.get(person_id, 0)
+
+        if conn_count == 1:
+            low_conn_by_agent[agent] = low_conn_by_agent.get(agent, 0) + 1
+
+    return low_conn_by_agent
+
+
 def query_stage_metrics(start_date: datetime, end_date: datetime) -> Dict[str, Dict[str, int]]:
     """
     Query Supabase for stage change metrics grouped by agent.
@@ -686,6 +852,9 @@ def write_to_google_sheets(
         # At-risk leads (open offers with only 1 follow-up call)
         at_risk = at_risk_leads.get(agent, 0) if at_risk_leads else 0
 
+        # Open offers with only 1 connection after offer
+        low_conn = low_conn_leads.get(agent, 0) if low_conn_leads else 0
+
         # Store all metrics for this agent
         agent_data[agent] = {
             # KPIs
@@ -705,6 +874,7 @@ def write_to_google_sheets(
             'single_dial_with_rate': single_dial_with_rate,
             'double_dial': double_dial,
             'double_dial_with_rate': double_dial_with_rate,
+            'low_conn_after_offer': low_conn,
             'signed_contracts': signed_contracts,
         }
 
@@ -725,11 +895,53 @@ def write_to_google_sheets(
     else:
         latest_ws = spreadsheet.add_worksheet(title="Latest", rows=100, cols=20, index=0)
 
+    # Calculate totals across all agents
+    totals = {
+        'offers': sum(agent_data[agent]['offers'] for agent in all_agents),
+        'contracts_sent': sum(agent_data[agent]['contracts_sent'] for agent in all_agents),
+        'at_risk_low_followup': sum(agent_data[agent]['at_risk_low_followup'] for agent in all_agents),
+        'talk_time': sum(agent_data[agent]['talk_time'] for agent in all_agents),
+        'outbound_calls': sum(agent_data[agent]['outbound_calls'] for agent in all_agents),
+        'connections': sum(agent_data[agent]['connections'] for agent in all_agents),
+        'unique_leads': sum(agent_data[agent]['unique_leads'] for agent in all_agents),
+        'unique_leads_connected': sum(agent_data[agent]['unique_leads_connected'] for agent in all_agents),
+        'single_dial': sum(agent_data[agent]['single_dial'] for agent in all_agents),
+        'double_dial': sum(agent_data[agent]['double_dial'] for agent in all_agents),
+        'low_conn_after_offer': sum(agent_data[agent]['low_conn_after_offer'] for agent in all_agents),
+        'signed_contracts': sum(agent_data[agent]['signed_contracts'] for agent in all_agents),
+    }
+    # Calculate rates from totals (not averaging rates)
+    totals['connection_rate'] = f"{round(totals['connections'] / totals['outbound_calls'] * 100)}%" if totals['outbound_calls'] > 0 else "0%"
+    totals['unique_lead_conn_rate'] = f"{round(totals['unique_leads_connected'] / totals['unique_leads'] * 100)}%" if totals['unique_leads'] > 0 else "0%"
+    totals['avg_call_min'] = round(totals['talk_time'] / totals['outbound_calls'], 1) if totals['outbound_calls'] > 0 else 0
+    # For dial sequences with answer rates, sum the counts (rates don't sum meaningfully)
+    totals['single_dial_with_rate'] = totals['single_dial']
+    totals['double_dial_with_rate'] = totals['double_dial']
+
+    # Standards (expected minimums) - placeholder values to be customized
+    standards = {
+        'offers': 5,
+        'contracts_sent': 3,
+        'at_risk_low_followup': "< 3",  # Lower is better for this metric
+        'talk_time': 300,
+        'outbound_calls': 200,
+        'connections': 30,
+        'connection_rate': "15%",
+        'unique_leads': 50,
+        'unique_leads_connected': 25,
+        'unique_lead_conn_rate': "50%",
+        'avg_call_min': 1.5,
+        'single_dial_with_rate': "-",
+        'double_dial_with_rate': "-",
+        'low_conn_after_offer': "-",
+        'signed_contracts': 2,
+    }
+
     # Build the Latest tab with exact formatting from user's template
     latest_rows = []
 
-    # Row 1: Empty cell, then agent names
-    header_row = [""] + list(all_agents)
+    # Row 1: Empty cell, then agent names, Total, Standards
+    header_row = [""] + list(all_agents) + ["Total", "Standards"]
     latest_rows.append(header_row)
 
     # Row 2: "KPIs" section header
@@ -742,7 +954,7 @@ def write_to_google_sheets(
         ("Open Offers w/ 1 Follow-Up", 'at_risk_low_followup'),
     ]
     for label, key in kpi_metrics:
-        row = [label] + [agent_data[agent][key] for agent in all_agents]
+        row = [label] + [agent_data[agent][key] for agent in all_agents] + [totals[key], standards[key]]
         latest_rows.append(row)
 
     # Empty row between sections
@@ -763,10 +975,11 @@ def write_to_google_sheets(
         ("Avg Call (min)", 'avg_call_min'),
         ("Single Dial", 'single_dial_with_rate'),
         ("2x Dial", 'double_dial_with_rate'),
+        ("Open Offers w/ 1 Connection After Offer", 'low_conn_after_offer'),
         ("Signed Contracts", 'signed_contracts'),
     ]
     for label, key in metric_items:
-        row = [label] + [agent_data[agent][key] for agent in all_agents]
+        row = [label] + [agent_data[agent][key] for agent in all_agents] + [totals[key], standards[key]]
         latest_rows.append(row)
 
     # Empty row before metadata
@@ -780,10 +993,12 @@ def write_to_google_sheets(
 
     # Apply formatting to match user's template
     num_agents = len(all_agents)
-    last_col = chr(65 + num_agents)  # B for 1 agent, C for 2 agents, etc.
+    agent_last_col = chr(65 + num_agents)  # B for 1 agent, C for 2 agents, etc.
+    total_col = chr(65 + num_agents + 1)   # Total column
+    standards_col = chr(65 + num_agents + 2)  # Standards column
 
-    # Row 1: Agent names - bold and centered
-    latest_ws.format(f'B1:{last_col}1', {
+    # Row 1: Agent names, Total, Standards - bold and centered
+    latest_ws.format(f'B1:{standards_col}1', {
         'textFormat': {'bold': True},
         'horizontalAlignment': 'CENTER'
     })
@@ -796,17 +1011,37 @@ def write_to_google_sheets(
     # Row 7: "Metrics" - bold
     latest_ws.format('A7', {'textFormat': {'bold': True}})
 
-    # Metric labels (column A, rows 3-5 and 8-18): right-aligned
+    # Metric labels (column A, rows 3-5 and 8-19): right-aligned
     latest_ws.format('A3:A5', {'horizontalAlignment': 'RIGHT'})
-    latest_ws.format('A8:A18', {'horizontalAlignment': 'RIGHT'})
+    latest_ws.format('A8:A19', {'horizontalAlignment': 'RIGHT'})
 
-    # All values (columns B onwards): centered
-    latest_ws.format(f'B3:{last_col}5', {'horizontalAlignment': 'CENTER'})
-    latest_ws.format(f'B8:{last_col}18', {'horizontalAlignment': 'CENTER'})
+    # Agent values (columns B to agent_last_col): centered
+    latest_ws.format(f'B3:{agent_last_col}5', {'horizontalAlignment': 'CENTER'})
+    latest_ws.format(f'B8:{agent_last_col}19', {'horizontalAlignment': 'CENTER'})
+
+    # Total column: bold and centered
+    latest_ws.format(f'{total_col}3:{total_col}5', {
+        'textFormat': {'bold': True},
+        'horizontalAlignment': 'CENTER'
+    })
+    latest_ws.format(f'{total_col}8:{total_col}19', {
+        'textFormat': {'bold': True},
+        'horizontalAlignment': 'CENTER'
+    })
+
+    # Standards column: centered with background color for visibility
+    latest_ws.format(f'{standards_col}3:{standards_col}5', {
+        'horizontalAlignment': 'CENTER',
+        'backgroundColor': {'red': 0.95, 'green': 0.95, 'blue': 0.95}
+    })
+    latest_ws.format(f'{standards_col}8:{standards_col}19', {
+        'horizontalAlignment': 'CENTER',
+        'backgroundColor': {'red': 0.95, 'green': 0.95, 'blue': 0.95}
+    })
 
     # Metadata rows: "Report Generated:" and "Date Range:" bold
-    latest_ws.format('A20', {'textFormat': {'bold': True}})
     latest_ws.format('A21', {'textFormat': {'bold': True}})
+    latest_ws.format('A22', {'textFormat': {'bold': True}})
 
     # === Write to "History" tab ===
     print("  Writing to 'History' tab...")
@@ -898,6 +1133,12 @@ def main():
     at_risk_leads = query_open_offers_low_followup(FUB_API_KEY)
     total_at_risk = sum(at_risk_leads.values())
     print(f"Found {total_at_risk} leads at risk (only 1 follow-up call)")
+
+    # Get open offers with only 1 connection after offer
+    print("Querying open offers with low connections after offer...")
+    low_conn_leads = query_open_offers_low_connections(FUB_API_KEY)
+    total_low_conn = sum(low_conn_leads.values())
+    print(f"Found {total_low_conn} leads with only 1 connection after offer")
 
     def print_report_to_console(title_suffix=""):
         """Helper to print report data to console."""
