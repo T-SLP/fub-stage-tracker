@@ -114,8 +114,8 @@ def query_open_offers_metrics(fub_api_key: str) -> Dict[str, Dict[str, Any]]:
 
     Returns per-agent metrics:
     - total_open_offers: Total leads in "Offers Made" or "Contract Sent" (24+ hrs)
-    - low_followup_pct: % of open offers with only 1 follow-up call
-    - low_connection_pct: % of open offers with only 1 connection (2+ min call)
+    - low_followup_pct: % of open offers with 0 or 1 follow-up calls (need more outreach)
+    - low_connection_pct: % of open offers with 0 or 1 connections/2+ min calls (need more engagement)
 
     Criteria for open offers:
     - Lead is currently in "ACQ - Offers Made" or "ACQ - Contract Sent" stage
@@ -271,10 +271,12 @@ def query_open_offers_metrics(fub_api_key: str) -> Dict[str, Dict[str, Any]]:
 
         agent_totals[agent] = agent_totals.get(agent, 0) + 1
 
-        if followup_count == 1:
+        # Count leads with 0 or 1 follow-up calls (need more outreach)
+        if followup_count <= 1:
             agent_low_followup[agent] = agent_low_followup.get(agent, 0) + 1
 
-        if connection_count == 1:
+        # Count leads with 0 or 1 connections (need more engagement)
+        if connection_count <= 1:
             agent_low_connection[agent] = agent_low_connection.get(agent, 0) + 1
 
     # Build result with percentages
@@ -731,6 +733,8 @@ def write_to_google_sheets(
             'unique_leads_connected': unique_leads_connected,
             'unique_lead_conn_rate': unique_lead_conn_rate,
             'avg_call_min': avg_call_min,
+            'long_call_total_sec': sum(long_call_durations),  # For proper total avg calculation
+            'long_call_count': len(long_call_durations),      # For proper total avg calculation
             'single_dial': single_dial,
             'single_dial_with_rate': single_dial_with_rate,
             'double_dial': double_dial,
@@ -768,11 +772,14 @@ def write_to_google_sheets(
         'single_dial': sum(agent_data[agent]['single_dial'] for agent in all_agents),
         'double_dial': sum(agent_data[agent]['double_dial'] for agent in all_agents),
         'signed_contracts': sum(agent_data[agent]['signed_contracts'] for agent in all_agents),
+        'long_call_total_sec': sum(agent_data[agent]['long_call_total_sec'] for agent in all_agents),
+        'long_call_count': sum(agent_data[agent]['long_call_count'] for agent in all_agents),
     }
     # Calculate rates from totals (not averaging rates)
     totals['connection_rate'] = f"{round(totals['connections'] / totals['outbound_calls'] * 100)}%" if totals['outbound_calls'] > 0 else "0%"
     totals['unique_lead_conn_rate'] = f"{round(totals['unique_leads_connected'] / totals['unique_leads'] * 100)}%" if totals['unique_leads'] > 0 else "0%"
-    totals['avg_call_min'] = round(totals['talk_time'] / totals['outbound_calls'], 1) if totals['outbound_calls'] > 0 else 0
+    # Avg Call (min) = average duration of 2+ min calls only (matches agent-level calculation)
+    totals['avg_call_min'] = round(totals['long_call_total_sec'] / totals['long_call_count'] / 60, 1) if totals['long_call_count'] > 0 else 0
     # For dial sequences with answer rates, sum the counts (rates don't sum meaningfully)
     totals['single_dial_with_rate'] = totals['single_dial']
     totals['double_dial_with_rate'] = totals['double_dial']
