@@ -753,7 +753,8 @@ def write_to_google_sheets(
     call_metrics: Dict[str, Dict[str, Any]],
     start_date: datetime,
     end_date: datetime,
-    at_risk_leads: Dict[str, int] = None
+    at_risk_leads: Dict[str, int] = None,
+    low_conn_leads: Dict[str, int] = None
 ) -> str:
     """
     Write the report to Google Sheets with two tabs:
@@ -1190,7 +1191,7 @@ def main():
     else:
         # Full report - write to Google Sheets
         print("Writing report to Google Sheets...")
-        sheet_url = write_to_google_sheets(stage_metrics, call_metrics, start_date, end_date, at_risk_leads)
+        sheet_url = write_to_google_sheets(stage_metrics, call_metrics, start_date, end_date, at_risk_leads, low_conn_leads)
         print(f"\nReport created successfully!")
         print(f"View report: {sheet_url}")
 
