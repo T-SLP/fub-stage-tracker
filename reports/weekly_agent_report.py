@@ -665,6 +665,7 @@ def write_to_google_sheets(
         # KPIs
         "Offers Made",
         "Contracts Sent",
+        "% Open Offers w/ <= 2 Dials After Offer",
         # Metrics
         "Talk Time (min)",
         "Outbound Calls",
@@ -676,6 +677,7 @@ def write_to_google_sheets(
         "Avg Call (min)",
         "Single Dial",
         "2x Dial",
+        "% Open Offers w/ <=1 Connection After Offer",
         "Signed Contracts",
     ]
 
@@ -757,11 +759,12 @@ def write_to_google_sheets(
         }
 
         # Row for History tab (with week column)
+        # Must match order of history_headers exactly
         history_row = [
-            week_label, agent, offers, contracts_sent,
+            week_label, agent, offers, contracts_sent, low_followup_pct,
             talk_time, outbound_calls, connections, connection_rate,
             unique_leads, unique_leads_connected, unique_lead_conn_rate,
-            avg_call_min, single_dial, double_dial, signed_contracts
+            avg_call_min, single_dial, double_dial, low_conn_pct, signed_contracts
         ]
         history_rows_to_add.append(history_row)
 
@@ -947,13 +950,13 @@ def write_to_google_sheets(
             # Empty sheet, just add header and data
             history_rows = [history_headers] + history_rows_to_add
             history_ws.update(history_rows, 'A1')
-            history_ws.format('A1:O1', {'textFormat': {'bold': True}})
+            history_ws.format('A1:R1', {'textFormat': {'bold': True}})
     else:
         # Create new History tab
         history_ws = spreadsheet.add_worksheet(title="History", rows=1000, cols=20, index=1)
         history_rows = [history_headers] + history_rows_to_add
         history_ws.update(history_rows, 'A1')
-        history_ws.format('A1:O1', {'textFormat': {'bold': True}})
+        history_ws.format('A1:R1', {'textFormat': {'bold': True}})
 
     return f"https://docs.google.com/spreadsheets/d/{WEEKLY_AGENT_SHEET_ID}/edit"
 
