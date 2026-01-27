@@ -3,10 +3,10 @@ name: Weekly Agent Report
 on:
   # Run twice per week
   schedule:
-    # Sunday at 10 PM Eastern (3 AM UTC Monday to ensure it's after 10 PM ET year-round)
-    # Full report for the previous week (Mon-Sun) - creates Google Sheet tab
-    - cron: '0 3 * * 1'
-    # Wednesday at 2 PM Eastern (7 PM UTC to ensure it's after 2 PM ET year-round)
+    # Monday at 6 AM Eastern (11 AM UTC during EST, 10 AM UTC during EDT)
+    # Full report for the previous week (Mon-Sun) - creates Google Sheet tab + email
+    - cron: '0 11 * * 1'
+    # Wednesday at 2 PM Eastern (7 PM UTC during EST, 6 PM UTC during EDT)
     # Mid-week report for current week so far - email only, no tab
     - cron: '0 19 * * 3'
 
@@ -27,6 +27,11 @@ on:
         description: 'Number of days (only used if report_type is not set)'
         required: false
         type: string
+      send_email:
+        description: 'Send email report'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   generate-report:
@@ -51,26 +56,35 @@ jobs:
           FUB_API_KEY: ${{ secrets.FUB_API_KEY }}
           GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
         run: |
           REPORT_TYPE="${{ github.event.inputs.report_type || 'auto' }}"
           DAYS="${{ github.event.inputs.days }}"
+          SEND_EMAIL="${{ github.event.inputs.send_email }}"
 
           # Determine if this is a mid-week run (Wednesday = no sheet, email only)
           DAY_OF_WEEK=$(date +%u)  # 1=Monday, 3=Wednesday, 7=Sunday
 
+          # Build email flag
+          EMAIL_FLAG=""
+          if [ "$SEND_EMAIL" != "false" ]; then
+            EMAIL_FLAG="--send-email"
+          fi
+
           if [ -n "$DAYS" ]; then
-            python reports/weekly_agent_report.py --days "$DAYS"
+            python reports/weekly_agent_report.py --days "$DAYS" $EMAIL_FLAG
           elif [ "$REPORT_TYPE" = "previous-week" ]; then
-            python reports/weekly_agent_report.py --previous-week
+            python reports/weekly_agent_report.py --previous-week $EMAIL_FLAG
           elif [ "$REPORT_TYPE" = "current-week" ]; then
-            python reports/weekly_agent_report.py
+            python reports/weekly_agent_report.py $EMAIL_FLAG
           elif [ "$REPORT_TYPE" = "midweek-email" ]; then
             # Mid-week email only (no Google Sheet tab)
-            python reports/weekly_agent_report.py --no-sheet
+            python reports/weekly_agent_report.py --no-sheet --send-email
           elif [ "$DAY_OF_WEEK" = "3" ]; then
             # Wednesday scheduled run - mid-week email only
-            python reports/weekly_agent_report.py --no-sheet
+            python reports/weekly_agent_report.py --no-sheet --send-email
           else
-            # Sunday/Monday scheduled run or manual - full report with sheet
-            python reports/weekly_agent_report.py --previous-week
+            # Monday scheduled run or manual - full report with sheet + email
+            python reports/weekly_agent_report.py --previous-week --send-email
           fi

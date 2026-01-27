@@ -7,6 +7,7 @@ Generates a Google Sheets report with agent metrics:
 - Call metrics from FUB API
 
 Can be run automatically via GitHub Actions or manually triggered.
+Sends email reports on Monday (weekly) and Wednesday (midweek).
 """
 
 import os
@@ -14,9 +15,13 @@ import sys
 import argparse
 import base64
 import json
+import smtplib
+import ssl
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from typing import Dict, List, Any, Optional
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # Eastern timezone for week boundaries
 EASTERN_TZ = ZoneInfo("America/New_York")
@@ -59,6 +64,14 @@ INCLUDED_AGENTS = [
     "Dante Hernandez",
     "Madeleine Penales",
 ]
+
+# Email configuration
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+EMAIL_FROM = os.getenv("EMAIL_FROM", "travis@synergylandpartners.com")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")  # Gmail app password
+EMAIL_TO = ["acquisitions@synergylandpartners.com", "dante@synergylandpartners.com"]
+EMAIL_CC = ["travis@synergylandpartners.com"]
 
 
 def get_date_range(days_back: int = None, previous_week: bool = False) -> tuple[datetime, datetime]:
@@ -945,6 +958,175 @@ def write_to_google_sheets(
     return f"https://docs.google.com/spreadsheets/d/{WEEKLY_AGENT_SHEET_ID}/edit"
 
 
+def generate_email_html(
+    agent_data: Dict[str, Dict[str, Any]],
+    totals: Dict[str, Any],
+    standards: Dict[str, Any],
+    all_agents: List[str],
+    start_date: datetime,
+    end_date: datetime,
+    is_midweek: bool = False
+) -> str:
+    """
+    Generate HTML email content matching the Google Sheet layout.
+    """
+    # Build HTML table
+    html = """
+    <html>
+    <head>
+        <style>
+            body { font-family: Arial, sans-serif; }
+            table { border-collapse: collapse; margin: 20px 0; }
+            th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: center; }
+            th { background-color: #f5f5f5; font-weight: bold; }
+            .section-header { background-color: #e8e8e8; font-weight: bold; text-align: left !important; }
+            .metric-label { text-align: right !important; }
+            .total-col { font-weight: bold; background-color: #f9f9f9; }
+            .standards-col { background-color: #f0f0f0; }
+            .empty-row { height: 10px; }
+            .metadata { color: #666; font-size: 12px; margin-top: 20px; }
+        </style>
+    </head>
+    <body>
+    """
+
+    # Add header
+    if is_midweek:
+        html += f"<h2>Midweek AM Metrics and KPIs Report</h2>"
+    else:
+        html += f"<h2>Weekly AM Metrics and KPIs Report</h2>"
+
+    html += f"<p>Date Range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}</p>"
+
+    # Start table
+    html += "<table>"
+
+    # Header row
+    html += "<tr><th></th>"
+    for agent in all_agents:
+        html += f"<th>{agent}</th>"
+    html += "<th class='total-col'>Total (Actuals)</th>"
+    html += "<th class='standards-col'>Standards (each AM)</th></tr>"
+
+    # KPIs section header
+    html += "<tr><td class='section-header' colspan='100%'>KPIs</td></tr>"
+
+    # KPI rows
+    kpi_metrics = [
+        ("Offers Made", 'offers'),
+        ("Contracts Sent", 'contracts_sent'),
+        ("% Open Offers w/ <= 2 Dials After Offer", 'low_followup_pct'),
+    ]
+    for label, key in kpi_metrics:
+        html += f"<tr><td class='metric-label'>{label}</td>"
+        for agent in all_agents:
+            html += f"<td>{agent_data[agent][key]}</td>"
+        html += f"<td class='total-col'>{totals[key]}</td>"
+        html += f"<td class='standards-col'>{standards[key]}</td></tr>"
+
+    # Empty row
+    html += "<tr class='empty-row'><td colspan='100%'></td></tr>"
+
+    # Metrics section header
+    html += "<tr><td class='section-header' colspan='100%'>Metrics</td></tr>"
+
+    # Metrics rows
+    metric_items = [
+        ("Talk Time (min)", 'talk_time'),
+        ("Outbound Calls", 'outbound_calls'),
+        ("Connections (2+ min)", 'connections'),
+        ("Connection Rate", 'connection_rate'),
+        ("Unique Leads Dialed", 'unique_leads'),
+        ("Unique Leads Connected", 'unique_leads_connected'),
+        ("Unique Lead Connection Rate", 'unique_lead_conn_rate'),
+        ("Avg Call (min)", 'avg_call_min'),
+        ("Single Dial", 'single_dial_with_rate'),
+        ("2x Dial", 'double_dial_with_rate'),
+        ("% Open Offers w/ <=1 Connection After Offer", 'low_conn_pct'),
+        ("Signed Contracts", 'signed_contracts'),
+    ]
+    for label, key in metric_items:
+        html += f"<tr><td class='metric-label'>{label}</td>"
+        for agent in all_agents:
+            html += f"<td>{agent_data[agent][key]}</td>"
+        html += f"<td class='total-col'>{totals[key]}</td>"
+        html += f"<td class='standards-col'>{standards[key]}</td></tr>"
+
+    html += "</table>"
+
+    # Metadata
+    html += f"""
+    <div class='metadata'>
+        <p>Report Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}</p>
+    </div>
+    </body>
+    </html>
+    """
+
+    return html
+
+
+def send_email_report(
+    html_content: str,
+    start_date: datetime,
+    end_date: datetime,
+    is_midweek: bool = False
+) -> bool:
+    """
+    Send the report via email.
+    Returns True if successful, False otherwise.
+    """
+    if not EMAIL_PASSWORD:
+        print("WARNING: EMAIL_PASSWORD not set, skipping email")
+        return False
+
+    # Determine subject line
+    if is_midweek:
+        # Wednesday: use the current date
+        subject_date = datetime.now(EASTERN_TZ).strftime('%B %d, %Y')
+        subject = f"Midweek AM Metrics and KPIs Report - {subject_date}"
+    else:
+        # Monday: use the Saturday of the previous week (end_date is Sunday, so subtract 1 day)
+        # end_date is the start of the current week (Monday 00:00), so Saturday is end_date - 2 days
+        # Actually, for previous week report, end_date is Sunday 23:59 or Monday 00:00
+        # We want the Saturday, which is 1 day before Sunday
+        saturday_date = end_date - timedelta(days=1)
+        if saturday_date.weekday() != 5:  # If not Saturday, find the previous Saturday
+            days_since_saturday = (saturday_date.weekday() + 2) % 7
+            saturday_date = saturday_date - timedelta(days=days_since_saturday)
+        subject_date = saturday_date.strftime('%B %d, %Y')
+        subject = f"Weekly AM Metrics and KPIs Report - For the week ending {subject_date}"
+
+    try:
+        # Create message
+        message = MIMEMultipart("alternative")
+        message["From"] = EMAIL_FROM
+        message["To"] = ", ".join(EMAIL_TO)
+        message["Cc"] = ", ".join(EMAIL_CC)
+        message["Subject"] = subject
+
+        # Attach HTML content
+        html_part = MIMEText(html_content, "html")
+        message.attach(html_part)
+
+        # All recipients (To + Cc)
+        all_recipients = EMAIL_TO + EMAIL_CC
+
+        # Send email
+        context = ssl.create_default_context()
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls(context=context)
+            server.login(EMAIL_FROM, EMAIL_PASSWORD)
+            server.sendmail(EMAIL_FROM, all_recipients, message.as_string())
+
+        print(f"Email sent successfully: {subject}")
+        return True
+
+    except Exception as e:
+        print(f"ERROR: Failed to send email: {e}")
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description='Generate weekly agent performance report')
     parser.add_argument(
@@ -967,6 +1149,11 @@ def main():
         '--dry-run',
         action='store_true',
         help='Print report to console without writing to Google Sheets'
+    )
+    parser.add_argument(
+        '--send-email',
+        action='store_true',
+        help='Send report via email'
     )
     args = parser.parse_args()
 
@@ -1046,6 +1233,114 @@ def main():
             display_name = agent[:24] if len(agent) > 24 else agent
             print(f"{display_name:<25} {offers:<7} {contracts:<10} {under_contract:<8} {closed:<7} {outbound_calls:<9} {unique_leads:<7} {unique_connected:<10} {conversations:<7} {connection_rate:<9} {talk_time:<8} {avg_call_min:<7} {single_dial:<7} {double_seq:<4} {triple_seq:<4}")
 
+    # Prepare agent data for email (same logic as write_to_google_sheets)
+    def prepare_email_data():
+        """Prepare data structures needed for email."""
+        all_agents_set = set(stage_metrics.keys()) | set(call_metrics.keys())
+        all_agents_set.discard('Unassigned')
+        if INCLUDED_AGENTS:
+            agents_list = [a for a in sorted(all_agents_set) if a in INCLUDED_AGENTS]
+        else:
+            agents_list = sorted(all_agents_set)
+
+        agent_data = {}
+        for agent in agents_list:
+            stage_data = stage_metrics.get(agent, {})
+            offers = stage_data.get("ACQ - Offers Made", 0)
+            contracts_sent = stage_data.get("ACQ - Contract Sent", 0)
+            signed_contracts = stage_data.get("ACQ - Under Contract", 0)
+
+            call_data = call_metrics.get(agent, {})
+            outbound_calls = call_data.get('outbound_calls', 0)
+            unique_leads = call_data.get('unique_leads_dialed', 0)
+            unique_leads_connected = call_data.get('unique_leads_connected', 0)
+            connections = call_data.get('conversations', 0)
+            long_call_durations = call_data.get('long_call_durations', [])
+            avg_call_min = round(sum(long_call_durations) / len(long_call_durations) / 60, 1) if long_call_durations else 0
+            talk_time = call_data.get('talk_time_min', 0)
+            connection_rate = f"{round(connections / outbound_calls * 100)}%" if outbound_calls > 0 else "0%"
+            unique_lead_conn_rate = f"{round(unique_leads_connected / unique_leads * 100)}%" if unique_leads > 0 else "0%"
+            single_dial = call_data.get('single_dial_calls', 0)
+            single_dial_answered = call_data.get('single_dial_answered', 0)
+            double_dial = call_data.get('double_dial_sequences', 0)
+            double_dial_answered = call_data.get('double_dial_answered', 0)
+
+            single_dial_rate = round(single_dial_answered / single_dial * 100) if single_dial > 0 else 0
+            double_dial_rate = round(double_dial_answered / double_dial * 100) if double_dial > 0 else 0
+            single_dial_with_rate = f"{single_dial} ({single_dial_rate}%)"
+            double_dial_with_rate = f"{double_dial} ({double_dial_rate}%)"
+
+            agent_offer_metrics = open_offers_metrics.get(agent, {}) if open_offers_metrics else {}
+            low_followup_pct = agent_offer_metrics.get('low_followup_pct', '0%')
+            low_conn_pct = agent_offer_metrics.get('low_connection_pct', '0%')
+
+            agent_data[agent] = {
+                'offers': offers,
+                'contracts_sent': contracts_sent,
+                'low_followup_pct': low_followup_pct,
+                'talk_time': talk_time,
+                'outbound_calls': outbound_calls,
+                'connections': connections,
+                'connection_rate': connection_rate,
+                'unique_leads': unique_leads,
+                'unique_leads_connected': unique_leads_connected,
+                'unique_lead_conn_rate': unique_lead_conn_rate,
+                'avg_call_min': avg_call_min,
+                'single_dial_with_rate': single_dial_with_rate,
+                'double_dial_with_rate': double_dial_with_rate,
+                'low_conn_pct': low_conn_pct,
+                'signed_contracts': signed_contracts,
+                'long_call_total_sec': sum(long_call_durations),
+                'long_call_count': len(long_call_durations),
+            }
+
+        # Calculate totals
+        totals = {
+            'offers': sum(agent_data[a]['offers'] for a in agents_list),
+            'contracts_sent': sum(agent_data[a]['contracts_sent'] for a in agents_list),
+            'talk_time': sum(agent_data[a]['talk_time'] for a in agents_list),
+            'outbound_calls': sum(agent_data[a]['outbound_calls'] for a in agents_list),
+            'connections': sum(agent_data[a]['connections'] for a in agents_list),
+            'unique_leads': sum(agent_data[a]['unique_leads'] for a in agents_list),
+            'unique_leads_connected': sum(agent_data[a]['unique_leads_connected'] for a in agents_list),
+            'single_dial': sum(int(agent_data[a]['single_dial_with_rate'].split()[0]) for a in agents_list),
+            'double_dial': sum(int(agent_data[a]['double_dial_with_rate'].split()[0]) for a in agents_list),
+            'signed_contracts': sum(agent_data[a]['signed_contracts'] for a in agents_list),
+            'long_call_total_sec': sum(agent_data[a]['long_call_total_sec'] for a in agents_list),
+            'long_call_count': sum(agent_data[a]['long_call_count'] for a in agents_list),
+        }
+        totals['connection_rate'] = f"{round(totals['connections'] / totals['outbound_calls'] * 100)}%" if totals['outbound_calls'] > 0 else "0%"
+        totals['unique_lead_conn_rate'] = f"{round(totals['unique_leads_connected'] / totals['unique_leads'] * 100)}%" if totals['unique_leads'] > 0 else "0%"
+        totals['avg_call_min'] = round(totals['long_call_total_sec'] / totals['long_call_count'] / 60, 1) if totals['long_call_count'] > 0 else 0
+        totals['single_dial_with_rate'] = totals['single_dial']
+        totals['double_dial_with_rate'] = totals['double_dial']
+
+        total_open_offers = sum(m['total'] for m in open_offers_metrics.values()) if open_offers_metrics else 0
+        total_low_followup_count = sum(m['low_followup_count'] for m in open_offers_metrics.values()) if open_offers_metrics else 0
+        total_low_conn_count = sum(m['low_connection_count'] for m in open_offers_metrics.values()) if open_offers_metrics else 0
+        totals['low_followup_pct'] = f"{round(total_low_followup_count / total_open_offers * 100)}%" if total_open_offers > 0 else "0%"
+        totals['low_conn_pct'] = f"{round(total_low_conn_count / total_open_offers * 100)}%" if total_open_offers > 0 else "0%"
+
+        standards = {
+            'offers': 18,
+            'contracts_sent': 4,
+            'low_followup_pct': "< 20%",
+            'talk_time': 220,
+            'outbound_calls': 160,
+            'connections': 30,
+            'connection_rate': "-",
+            'unique_leads': 50,
+            'unique_leads_connected': "-",
+            'unique_lead_conn_rate': "-",
+            'avg_call_min': "-",
+            'single_dial_with_rate': "-",
+            'double_dial_with_rate': "-",
+            'low_conn_pct': "< 75%",
+            'signed_contracts': 1,
+        }
+
+        return agent_data, totals, standards, agents_list
+
     if args.dry_run:
         # Dry run - print to console only
         print_report_to_console(" (DRY RUN)")
@@ -1054,14 +1349,22 @@ def main():
         # Mid-week email-only run - no Google Sheet tab
         print_report_to_console(" (MID-WEEK)")
         print("\n(Mid-week report - no Google Sheet tab created)")
-        # TODO: Send email when email functionality is implemented
-        print("(Email functionality not yet implemented)")
+        if args.send_email:
+            print("Preparing and sending email report...")
+            agent_data, totals, standards, agents_list = prepare_email_data()
+            html_content = generate_email_html(agent_data, totals, standards, agents_list, start_date, end_date, is_midweek=True)
+            send_email_report(html_content, start_date, end_date, is_midweek=True)
     else:
         # Full report - write to Google Sheets
         print("Writing report to Google Sheets...")
         sheet_url = write_to_google_sheets(stage_metrics, call_metrics, start_date, end_date, open_offers_metrics)
         print(f"\nReport created successfully!")
         print(f"View report: {sheet_url}")
+        if args.send_email:
+            print("Preparing and sending email report...")
+            agent_data, totals, standards, agents_list = prepare_email_data()
+            html_content = generate_email_html(agent_data, totals, standards, agents_list, start_date, end_date, is_midweek=False)
+            send_email_report(html_content, start_date, end_date, is_midweek=False)
 
 
 if __name__ == '__main__':
