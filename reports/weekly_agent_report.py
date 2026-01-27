@@ -791,30 +791,30 @@ def write_to_google_sheets(
     totals['low_followup_pct'] = f"{round(total_low_followup / total_open_offers * 100)}%" if total_open_offers > 0 else "0%"
     totals['low_conn_pct'] = f"{round(total_low_conn / total_open_offers * 100)}%" if total_open_offers > 0 else "0%"
 
-    # Standards (expected minimums) - placeholder values to be customized
+    # Standards (expected minimums per agent)
     standards = {
-        'offers': 5,
-        'contracts_sent': 3,
+        'offers': 18,
+        'contracts_sent': 4,
         'low_followup_pct': "< 20%",  # Lower is better - target under 20%
-        'talk_time': 300,
-        'outbound_calls': 200,
+        'talk_time': 220,
+        'outbound_calls': 160,
         'connections': 30,
-        'connection_rate': "15%",
+        'connection_rate': "-",
         'unique_leads': 50,
-        'unique_leads_connected': 25,
-        'unique_lead_conn_rate': "50%",
-        'avg_call_min': 1.5,
+        'unique_leads_connected': "-",
+        'unique_lead_conn_rate': "-",
+        'avg_call_min': "-",
         'single_dial_with_rate': "-",
         'double_dial_with_rate': "-",
-        'low_conn_pct': "-",
-        'signed_contracts': 2,
+        'low_conn_pct': "< 20%",  # Lower is better - target under 20%
+        'signed_contracts': 1,
     }
 
     # Build the Latest tab with exact formatting from user's template
     latest_rows = []
 
-    # Row 1: Empty cell, then agent names, Total, Standards
-    header_row = [""] + list(all_agents) + ["Total", "Standards"]
+    # Row 1: Empty cell, then agent names, Total (Actuals), Per Agent Standards
+    header_row = [""] + list(all_agents) + ["Total (Actuals)", "Per Agent Standards"]
     latest_rows.append(header_row)
 
     # Row 2: "KPIs" section header
@@ -824,7 +824,7 @@ def write_to_google_sheets(
     kpi_metrics = [
         ("Offers Made", 'offers'),
         ("Contracts Sent", 'contracts_sent'),
-        ("% Open Offers w/ 1 Follow-Up", 'low_followup_pct'),
+        ("% Open Offers w/ 1 Dial After Offer", 'low_followup_pct'),
     ]
     for label, key in kpi_metrics:
         row = [label] + [agent_data[agent][key] for agent in all_agents] + [totals[key], standards[key]]
