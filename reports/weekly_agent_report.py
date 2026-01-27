@@ -806,15 +806,15 @@ def write_to_google_sheets(
         'avg_call_min': "-",
         'single_dial_with_rate': "-",
         'double_dial_with_rate': "-",
-        'low_conn_pct': "< 20%",  # Lower is better - target under 20%
+        'low_conn_pct': "< 75%",  # Lower is better - target under 75%
         'signed_contracts': 1,
     }
 
     # Build the Latest tab with exact formatting from user's template
     latest_rows = []
 
-    # Row 1: Empty cell, then agent names, Total (Actuals), Per Agent Standards
-    header_row = [""] + list(all_agents) + ["Total (Actuals)", "Per Agent Standards"]
+    # Row 1: Empty cell, then agent names, Total (Actuals), Standards (each AM)
+    header_row = [""] + list(all_agents) + ["Total (Actuals)", "Standards (each AM)"]
     latest_rows.append(header_row)
 
     # Row 2: "KPIs" section header
@@ -824,7 +824,7 @@ def write_to_google_sheets(
     kpi_metrics = [
         ("Offers Made", 'offers'),
         ("Contracts Sent", 'contracts_sent'),
-        ("% Open Offers w/ 1 Dial After Offer", 'low_followup_pct'),
+        ("% Open Offers w/ <= 2 Dials After Offer", 'low_followup_pct'),
     ]
     for label, key in kpi_metrics:
         row = [label] + [agent_data[agent][key] for agent in all_agents] + [totals[key], standards[key]]
@@ -848,7 +848,7 @@ def write_to_google_sheets(
         ("Avg Call (min)", 'avg_call_min'),
         ("Single Dial", 'single_dial_with_rate'),
         ("2x Dial", 'double_dial_with_rate'),
-        ("% Open Offers w/ 1 Connection After Offer", 'low_conn_pct'),
+        ("% Open Offers w/ <=1 Connection After Offer", 'low_conn_pct'),
         ("Signed Contracts", 'signed_contracts'),
     ]
     for label, key in metric_items:
