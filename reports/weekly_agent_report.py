@@ -875,8 +875,10 @@ def write_to_google_sheets(
     latest_rows.append([""])
 
     # Metadata rows
+    # end_date is Monday 00:00, so subtract 1 day to show Sunday (actual last day of data)
+    display_end_date = end_date - timedelta(days=1)
     latest_rows.append(["Report Generated:", datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')])
-    latest_rows.append(["Date Range:", f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"])
+    latest_rows.append(["Date Range:", f"{start_date.strftime('%Y-%m-%d')} to {display_end_date.strftime('%Y-%m-%d')}"])
 
     latest_ws.update(latest_rows, 'A1')
 
@@ -999,7 +1001,9 @@ def generate_email_html(
     else:
         html += f"<h2>Weekly AM Metrics and KPIs Report</h2>"
 
-    html += f"<p>Date Range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}</p>"
+    # end_date is Monday 00:00, so subtract 1 day to show Sunday (actual last day of data)
+    display_end_date = end_date - timedelta(days=1)
+    html += f"<p>Date Range: {start_date.strftime('%Y-%m-%d')} to {display_end_date.strftime('%Y-%m-%d')}</p>"
 
     # Start table
     html += "<table>"
