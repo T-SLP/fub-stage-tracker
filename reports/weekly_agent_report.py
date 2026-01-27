@@ -114,7 +114,7 @@ def query_open_offers_metrics(fub_api_key: str) -> Dict[str, Dict[str, Any]]:
 
     Returns per-agent metrics:
     - total_open_offers: Total leads in "Offers Made" or "Contract Sent" (24+ hrs)
-    - low_followup_pct: % of open offers with 0 or 1 follow-up calls (need more outreach)
+    - low_followup_pct: % of open offers with 0, 1, or 2 follow-up calls (need more outreach)
     - low_connection_pct: % of open offers with 0 or 1 connections/2+ min calls (need more engagement)
 
     Criteria for open offers:
@@ -271,8 +271,8 @@ def query_open_offers_metrics(fub_api_key: str) -> Dict[str, Dict[str, Any]]:
 
         agent_totals[agent] = agent_totals.get(agent, 0) + 1
 
-        # Count leads with 0 or 1 follow-up calls (need more outreach)
-        if followup_count <= 1:
+        # Count leads with 0, 1, or 2 follow-up calls (need more outreach)
+        if followup_count <= 2:
             agent_low_followup[agent] = agent_low_followup.get(agent, 0) + 1
 
         # Count leads with 0 or 1 connections (need more engagement)
@@ -1007,7 +1007,7 @@ def main():
     total_open = sum(m['total'] for m in open_offers_metrics.values()) if open_offers_metrics else 0
     total_low_followup = sum(m['low_followup_count'] for m in open_offers_metrics.values()) if open_offers_metrics else 0
     total_low_conn = sum(m['low_connection_count'] for m in open_offers_metrics.values()) if open_offers_metrics else 0
-    print(f"Found {total_open} open offers, {total_low_followup} with only 1 follow-up, {total_low_conn} with only 1 connection")
+    print(f"Found {total_open} open offers, {total_low_followup} with <=2 follow-up dials, {total_low_conn} with <=1 connection")
 
     def print_report_to_console(title_suffix=""):
         """Helper to print report data to console."""
