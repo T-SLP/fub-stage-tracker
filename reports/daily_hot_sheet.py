@@ -745,10 +745,17 @@ def generate_console_report(overdue_leads, stats):
                 except:
                     pass
 
-            market_value = lead.get('market_total_value') or lead.get('market_value_estimate', 'N/A')
-            if market_value and market_value != 'N/A':
+            county_value = lead.get('market_total_value', 'N/A')
+            if county_value and county_value != 'N/A':
                 try:
-                    market_value = f"${float(market_value):,.0f}"
+                    county_value = f"${float(county_value):,.0f}"
+                except:
+                    pass
+
+            li_comp_value = lead.get('market_value_estimate', 'N/A')
+            if li_comp_value and li_comp_value != 'N/A':
+                try:
+                    li_comp_value = f"${float(li_comp_value):,.0f}"
                 except:
                     pass
 
@@ -762,7 +769,8 @@ def generate_console_report(overdue_leads, stats):
                 location,
                 acreage,
                 frontage,
-                market_value,
+                county_value,
+                li_comp_value,
                 lead['assigned_to']
             ]
 
@@ -773,7 +781,7 @@ def generate_console_report(overdue_leads, stats):
 
             table_data.append(row)
 
-        headers = ['Name', 'Status', 'Overdue', 'Overall Lead Age', 'Time in Stage', 'Standard', 'Location', 'Acres', 'Frontage', 'Market Value', 'Assigned To']
+        headers = ['Name', 'Status', 'Overdue', 'Overall Lead Age', 'Time in Stage', 'Standard', 'Location', 'Acres', 'Frontage', 'County Value', 'LI Comp Value', 'Assigned To']
         if is_offer_stage:
             headers.extend(['Dials Since Offer', 'Connections Since Offer'])
 
@@ -884,7 +892,7 @@ def generate_html_email(overdue_leads, stats):
             html += f'<table class="{stage_class}">'
 
             # Build header row - add extra columns for offer stages
-            header_row = '<tr><th>Name</th><th>Status</th><th>Overdue</th><th>Overall Lead Age</th><th>Time in Stage</th><th>Standard</th><th>Location</th><th>Acres</th><th>Frontage</th><th>Market Value</th><th>Assigned To</th>'
+            header_row = '<tr><th>Name</th><th>Status</th><th>Overdue</th><th>Overall Lead Age</th><th>Time in Stage</th><th>Standard</th><th>Location</th><th>Acres</th><th>Frontage</th><th>County Value</th><th>LI Comp Value</th><th>Assigned To</th>'
             if is_offer_stage:
                 header_row += '<th>Dials Since Offer</th><th>Connections Since Offer</th>'
             header_row += '</tr>'
@@ -947,11 +955,19 @@ def generate_html_email(overdue_leads, stats):
                     except:
                         pass
 
-                # Use Market Total Parcel Value or Market Value Estimate
-                market_value = lead.get('market_total_value') or lead.get('market_value_estimate', 'N/A')
-                if market_value and market_value != 'N/A':
+                # County Value (Market Total Parcel Value)
+                county_value = lead.get('market_total_value', 'N/A')
+                if county_value and county_value != 'N/A':
                     try:
-                        market_value = f"${float(market_value):,.0f}"
+                        county_value = f"${float(county_value):,.0f}"
+                    except:
+                        pass
+
+                # LI Comp Value (Land Insights Market Value Estimate)
+                li_comp_value = lead.get('market_value_estimate', 'N/A')
+                if li_comp_value and li_comp_value != 'N/A':
+                    try:
+                        li_comp_value = f"${float(li_comp_value):,.0f}"
                     except:
                         pass
 
@@ -976,7 +992,7 @@ def generate_html_email(overdue_leads, stats):
                     row_class = ''
 
                 # Build row
-                row = f'<tr class="{row_class}"><td>{name_cell}</td><td class="{status_class}">{status}</td><td><strong>{time_display}</strong></td><td>{lead_age}</td><td>{time_in_stage}</td><td>{rule}</td><td>{location}</td><td>{acreage}</td><td>{frontage}</td><td>{market_value}</td><td>{assigned_to}</td>'
+                row = f'<tr class="{row_class}"><td>{name_cell}</td><td class="{status_class}">{status}</td><td><strong>{time_display}</strong></td><td>{lead_age}</td><td>{time_in_stage}</td><td>{rule}</td><td>{location}</td><td>{acreage}</td><td>{frontage}</td><td>{county_value}</td><td>{li_comp_value}</td><td>{assigned_to}</td>'
 
                 # Add offer metrics for offer stages with highlighting for low follow-up
                 if is_offer_stage:
