@@ -1,3 +1,0 @@
-Railway Hobby Plan Deployment - Force Redeploy
-Timestamp: 2025-09-26 02:55 GMT
-Debug endpoint deployment to capture real FUB webhook format

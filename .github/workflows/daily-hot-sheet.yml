@@ -1,0 +1,45 @@
+name: Daily Lead Hot Sheet
+
+on:
+  schedule:
+    # 8 AM Eastern Time (Mon-Fri only)
+    # EST (winter): 8 AM ET = 1 PM UTC
+    # EDT (summer): 8 AM ET = 12 PM UTC
+    # Using 1 PM UTC for standard time
+    - cron: '0 13 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (no email sent)'
+        type: boolean
+        default: false
+
+jobs:
+  send-hot-sheet:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r reports/requirements.txt
+
+      - name: Run daily hot sheet
+        env:
+          FUB_API_KEY: ${{ secrets.FUB_API_KEY }}
+          FUB_SYSTEM_KEY: ${{ secrets.FUB_SYSTEM_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+        run: |
+          cd reports
+          if [ "${{ inputs.dry_run }}" == "true" ]; then
+            python daily_hot_sheet.py --dry-run
+          else
+            python daily_hot_sheet.py
+          fi
