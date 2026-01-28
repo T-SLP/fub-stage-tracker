@@ -2,11 +2,11 @@ name: Daily Lead Hot Sheet
 
 on:
   schedule:
-    # 8 AM Eastern Time (Mon-Fri only)
-    # EST (winter): 8 AM ET = 1 PM UTC
-    # EDT (summer): 8 AM ET = 12 PM UTC
-    # Using 1 PM UTC for standard time
-    - cron: '0 13 * * 1-5'
+    # 6:30 AM Eastern Time (Mon-Fri only)
+    # EST (winter): 6:30 AM ET = 11:30 AM UTC
+    # EDT (summer): 6:30 AM ET = 10:30 AM UTC
+    # Using 11:30 AM UTC for standard time
+    - cron: '30 11 * * 1-5'
   workflow_dispatch:
     inputs:
       dry_run:
