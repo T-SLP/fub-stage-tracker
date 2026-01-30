@@ -2,10 +2,10 @@ name: Daily Lead Hot Sheet
 
 on:
   schedule:
-    # 6:30 AM Eastern Time (Mon-Fri only)
-    # Both times scheduled - only one will pass the timezone check
-    - cron: '30 10 * * 1-5'  # 6:30 AM EDT (summer)
-    - cron: '30 11 * * 1-5'  # 6:30 AM EST (winter)
+    # 6 AM Eastern Time (Mon-Fri only)
+    # EST (winter): 6 AM ET = 11 AM UTC
+    # Note: During EDT (summer), this will run at 7 AM ET
+    - cron: '0 11 * * 1-5'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -17,16 +17,6 @@ jobs:
   send-hot-sheet:
     runs-on: ubuntu-latest
     steps:
-      - name: Check if correct time for Eastern timezone
-        if: github.event_name == 'schedule'
-        run: |
-          HOUR=$(TZ='America/New_York' date +%H)
-          if [ "$HOUR" -lt 6 ] || [ "$HOUR" -gt 7 ]; then
-            echo "Current Eastern hour is $HOUR, skipping (not 6-7 AM window)"
-            exit 1
-          fi
-          echo "Current Eastern hour is $HOUR, proceeding"
-
       - name: Checkout code
         uses: actions/checkout@v4
 
